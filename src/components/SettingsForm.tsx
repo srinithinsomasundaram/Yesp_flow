@@ -1,0 +1,99 @@
+"use client";
+
+import { useState } from "react";
+import { updateSettings } from "@/actions/settings";
+import { Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
+
+const monoInputClass =
+  "w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-900 outline-none font-mono";
+
+export function SettingsForm({ initialSettings }: { initialSettings: any }) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [showKey, setShowKey] = useState(false);
+  const [resendKey, setResendKey] = useState(initialSettings?.resendKey || "");
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setStatus(null);
+    const result = await updateSettings({ resendKey });
+    setIsSaving(false);
+    if (result.success) {
+      setStatus({ type: "success", message: "Settings saved successfully." });
+      setTimeout(() => setStatus(null), 4000);
+    } else {
+      setStatus({ type: "error", message: result.error ?? "Failed to save settings." });
+    }
+  };
+
+  return (
+    <form onSubmit={handleSave} className="max-w-xl space-y-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+            <KeyRound className="w-4 h-4 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Resend API Key</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Global fallback key used when an email account has no dedicated key. Configure
+              per-account keys in the <strong>Email Accounts</strong> tab.
+            </p>
+          </div>
+        </div>
+
+        <div className="relative">
+          <input
+            type={showKey ? "text" : "password"}
+            placeholder="re_••••••••••••••••••••••••"
+            value={resendKey}
+            onChange={(e) => setResendKey(e.target.value)}
+            className={monoInputClass + " pr-10"}
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            tabIndex={-1}
+          >
+            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+        {resendKey && (
+          <p className="text-xs text-emerald-600 mt-1.5 font-medium flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Key is set
+          </p>
+        )}
+      </div>
+
+      {status && (
+        <div
+          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium ${
+            status.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}
+        >
+          {status.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0" />
+          )}
+          {status.message}
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Settings
+        </button>
+      </div>
+    </form>
+  );
+}
