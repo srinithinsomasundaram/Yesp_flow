@@ -1,7 +1,8 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd 'Downloads/yesp email /leadcraft-ai' && npm ci && npm run build"
+buildCommand = "bash build.sh"
 
 [deploy]
-startCommand = "cd 'Downloads/yesp email /leadcraft-ai' && npm start"
+startCommand = "bash start.sh"
 healthcheckPath = "/"
+healthcheckTimeout = 60
