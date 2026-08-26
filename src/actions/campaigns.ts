@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
-import { getCurrentUserId } from "@/lib/auth-helper";
+import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
 
 export async function getCampaigns() {
   const userId = await getCurrentUserId();
@@ -66,6 +66,7 @@ export async function createCampaign(data: {
   startTime?: string;
   endTime?: string;
 }) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to create campaigns." };
   const userId = await getCurrentUserId();
   const { data: campaign, error: campError } = await supabase
     .from("Campaign")
@@ -113,6 +114,7 @@ export async function createCampaign(data: {
 }
 
 export async function deleteCampaign(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to delete campaigns." };
   const userId = await getCurrentUserId();
   await supabase.from("Campaign").delete().eq("id", id).eq("userId", userId);
   revalidatePath("/campaigns");
@@ -125,6 +127,7 @@ export async function updateCampaign(id: string, updates: {
   sendingDays?: string; startTime?: string; endTime?: string;
   emailAccountId?: string; status?: string;
 }) {
+  if (!await hasPermission("member")) return { success: false, error: "Member access required to update campaigns." };
   const userId = await getCurrentUserId();
   const { error } = await supabase.from("Campaign").update(updates).eq("id", id).eq("userId", userId);
   revalidatePath("/campaigns");
@@ -133,6 +136,7 @@ export async function updateCampaign(id: string, updates: {
 }
 
 export async function removeContactFromCampaign(contactId: string, campaignId: string) {
+  if (!await hasPermission("member")) return { success: false, error: "Member access required." };
   const { error } = await supabase
     .from("ContactCampaignState")
     .delete()
@@ -143,6 +147,7 @@ export async function removeContactFromCampaign(contactId: string, campaignId: s
 }
 
 export async function addCampaignStep(campaignId: string, templateId: string, delayDays: number, stepNumber: number, delayUnit?: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to add campaign steps." };
   const { error } = await supabase.from("CampaignStep").insert([
     { campaignId, templateId, delayDays, stepNumber, delayUnit: delayUnit || "days" },
   ]);
@@ -152,6 +157,7 @@ export async function addCampaignStep(campaignId: string, templateId: string, de
 }
 
 export async function updateCampaignStep(stepId: string, templateId: string, delayDays: number, delayUnit?: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update campaign steps." };
   const { error } = await supabase
     .from("CampaignStep")
     .update({ templateId, delayDays, delayUnit: delayUnit || "days" })
@@ -161,6 +167,7 @@ export async function updateCampaignStep(stepId: string, templateId: string, del
 }
 
 export async function removeCampaignStep(stepId: string, campaignId: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to remove campaign steps." };
   const { error } = await supabase.from("CampaignStep").delete().eq("id", stepId);
   if (error) dbLog("removeCampaignStep", error);
   revalidatePath(`/campaigns/${campaignId}`);

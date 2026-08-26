@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
-import { getCurrentUserId } from "@/lib/auth-helper";
+import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
 
 export type ContactImportRow = {
   email: string;
@@ -42,6 +42,7 @@ export async function importContacts(
   contactsData: ContactImportRow[],
   campaignId?: string
 ) {
+  if (!await hasPermission("member")) return { success: false, count: 0, error: "Member access required to import contacts." };
   const userId = await getCurrentUserId();
   let importedCount = 0;
   const insertedContactIds: string[] = [];
@@ -111,6 +112,7 @@ export async function importContacts(
 }
 
 export async function deleteContact(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to delete contacts." };
   const userId = await getCurrentUserId();
   await supabase.from("Contact").delete().eq("id", id).eq("userId", userId);
   revalidatePath("/contacts");
@@ -123,6 +125,7 @@ export async function updateContact(id: string, data: {
   phone?: string; website?: string; industry?: string;
   city?: string; timezone?: string; status?: string;
 }) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update contacts." };
   const userId = await getCurrentUserId();
   await supabase.from("Contact").update(data).eq("id", id).eq("userId", userId);
   revalidatePath("/contacts");
@@ -130,6 +133,7 @@ export async function updateContact(id: string, data: {
 }
 
 export async function updateContactStatus(id: string, status: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update contact status." };
   const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
@@ -143,6 +147,7 @@ export async function updateContactStatus(id: string, status: string) {
 }
 
 export async function markDNC(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to mark DNC." };
   const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
@@ -156,6 +161,7 @@ export async function markDNC(id: string) {
 }
 
 export async function unsubscribeContact(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to unsubscribe contacts." };
   const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
@@ -170,6 +176,7 @@ export async function unsubscribeContact(id: string) {
 
 export async function bulkDeleteContacts(ids: string[]) {
   if (!ids.length) return { success: true };
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to bulk delete contacts." };
   const userId = await getCurrentUserId();
   await supabase.from("Contact").delete().in("id", ids).eq("userId", userId);
   revalidatePath("/contacts");
@@ -178,6 +185,7 @@ export async function bulkDeleteContacts(ids: string[]) {
 
 export async function bulkAddToCampaign(contactIds: string[], campaignId: string) {
   if (!contactIds.length || !campaignId) return { success: true };
+  if (!await hasPermission("member")) return { success: false, error: "Member access required to add contacts to campaigns." };
   const statesToInsert = contactIds.map((id) => ({
     contactId: id,
     campaignId,
