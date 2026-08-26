@@ -26,8 +26,14 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
     const result = await updateSettings({ resendKey, reportingEmail: reportingEmail || undefined });
     setIsSaving(false);
     if (result.success) {
-      setStatus({ type: "success", message: "Settings saved." });
-      setTimeout(() => setStatus(null), 4000);
+      const msg = (result as any).emailSent
+        ? "Settings saved. Test email sent to reporting inbox ✓"
+        : (result as any).emailWarning
+          ? (result as any).emailWarning
+          : "Settings saved.";
+      const type = (result as any).emailWarning ? "error" : "success";
+      setStatus({ type, message: msg });
+      setTimeout(() => setStatus(null), 6000);
     } else {
       setStatus({ type: "error", message: result.error ?? "Failed to save settings." });
     }
