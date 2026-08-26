@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
-import { getMyAuthId, hasPermission } from "@/lib/auth-helper";
+import { getMyAuthId, hasPermission, getCurrentUserId } from "@/lib/auth-helper";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { sendTeamInviteEmail } from "@/lib/app-mailer";
 
@@ -93,16 +93,27 @@ export async function inviteTeamMember(teamId: string, email: string, role: Team
   }]);
   if (error) { dbLog("inviteTeamMember", error); return { success: false, error: error.message }; }
 
-  // Send invite email (non-blocking)
+  // Send invite email — get inviter info + workspace owner's Resend API key
   const supa = await createSupabaseServerClient();
-  const { data: { user } } = await supa.auth.getUser();
-  const { data: team } = await supabase.from("Team").select("name").eq("id", teamId).single();
+  const [{ data: { user } }, { data: team }, workspaceOwnerId] = await Promise.all([
+    supa.auth.getUser(),
+    supabase.from("Team").select("name, ownerId").eq("id", teamId).single(),
+    getCurrentUserId(),  // resolves to workspace owner's ID
+  ]);
   const inviterEmail = user?.email ?? "A teammate";
-  const teamName = team?.name ?? "the team";
+  const teamName     = team?.name ?? "the team";
 
-  sendTeamInviteEmail({ to: email.toLowerCase().trim(), teamName, inviterEmail, role }).catch((e) =>
-    console.error("[teams] invite email failed:", e.message)
-  );
+  const { data: ownerSettings } = await supabase
+    .from("Settings").select("resendKey").eq("id", workspaceOwnerId).maybeSingle();
+  const apiKey = ownerSettings?.resendKey?.trim() ?? "";
+
+  if (apiKey) {
+    sendTeamInviteEmail({ to: email.toLowerCase().trim(), teamName, inviterEmail, role, apiKey }).catch((e) =>
+      console.error("[teams] invite email failed:", e.message)
+    );
+  } else {
+    console.warn("[teams] invite email skipped — no Resend API key in workspace settings");
+  }
 
   revalidatePath("/settings");
   return { success: true };

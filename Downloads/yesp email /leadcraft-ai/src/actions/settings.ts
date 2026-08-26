@@ -29,11 +29,16 @@ export async function updateSettings(settings: {
   if (!await hasPermission("owner")) return { success: false, error: "Only the workspace owner can change settings." };
   const userId = await getCurrentUserId();
 
-  // Check if reportingEmail is being set or changed
-  const { data: existing } = await supabase.from("Settings").select("reportingEmail").eq("id", userId).maybeSingle();
+  // Fetch existing row to detect reportingEmail change and get the stored resendKey
+  const { data: existing } = await supabase
+    .from("Settings").select("reportingEmail, resendKey").eq("id", userId).maybeSingle();
+
   const prevReportingEmail = existing?.reportingEmail ?? null;
   const newReportingEmail  = settings.reportingEmail?.trim() || null;
-  const reportingEmailChanged = newReportingEmail && newReportingEmail !== prevReportingEmail;
+  const reportingEmailChanged = !!(newReportingEmail && newReportingEmail !== prevReportingEmail);
+
+  // The effective API key: use the one being saved (if provided), else the stored one
+  const effectiveApiKey = (settings.resendKey?.trim() || existing?.resendKey || "").trim();
 
   const { error } = await supabase.from("Settings").upsert({ id: userId, ...settings });
   if (error) {
@@ -41,13 +46,20 @@ export async function updateSettings(settings: {
     return { success: false, error: error.message ?? "Failed to save settings." };
   }
 
-  // Fire confirmation email (non-blocking — don't fail the save if this errors)
+  revalidatePath("/settings");
+
+  // Send confirmation test email if reporting email was set/changed
   if (reportingEmailChanged) {
-    sendReportingEmailConfirmation(newReportingEmail).catch((e) =>
-      console.error("[settings] reporting confirmation email failed:", e.message)
-    );
+    if (!effectiveApiKey) {
+      return { success: true, emailWarning: "Settings saved, but no Resend API key is configured — reporting confirmation email was not sent." };
+    }
+    try {
+      await sendReportingEmailConfirmation(newReportingEmail!, effectiveApiKey);
+      return { success: true, emailSent: true };
+    } catch (e: any) {
+      return { success: true, emailWarning: `Settings saved, but confirmation email failed: ${e.message}` };
+    }
   }
 
-  revalidatePath("/settings");
   return { success: true };
 }
