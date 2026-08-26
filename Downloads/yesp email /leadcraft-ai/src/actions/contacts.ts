@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
+import { getCurrentUserId } from "@/lib/auth-helper";
 
 export type ContactImportRow = {
   email: string;
@@ -20,6 +21,7 @@ export type ContactImportRow = {
 };
 
 export async function getContacts() {
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("Contact")
     .select(`
@@ -29,6 +31,7 @@ export async function getContacts() {
         campaign:Campaign (*)
       )
     `)
+    .eq("userId", userId)
     .order("createdAt", { ascending: false });
 
   if (error) dbLog("getContacts", error);
@@ -39,26 +42,22 @@ export async function importContacts(
   contactsData: ContactImportRow[],
   campaignId?: string
 ) {
+  const userId = await getCurrentUserId();
   let importedCount = 0;
   const insertedContactIds: string[] = [];
 
   for (const row of contactsData) {
     if (!row.email) continue;
 
-    // Check if DNC or unsubscribed flag exists on existing record
     const { data: existing } = await supabase
       .from("Contact")
       .select("id, isDNC, isUnsubscribed")
       .eq("email", row.email)
+      .eq("userId", userId)
       .single();
 
-    // Skip DNC or unsubscribed contacts
-    if (existing && (existing.isDNC || existing.isUnsubscribed)) {
-      console.log(`Skipping DNC/unsubscribed contact: ${row.email}`);
-      continue;
-    }
+    if (existing && (existing.isDNC || existing.isUnsubscribed)) continue;
 
-    // Build the full name from firstName/lastName if no explicit name
     const derivedName =
       row.name ||
       [row.firstName, row.lastName].filter(Boolean).join(" ") ||
@@ -69,6 +68,7 @@ export async function importContacts(
       .upsert(
         {
           email: row.email,
+          userId,
           name: derivedName,
           firstName: row.firstName || null,
           lastName: row.lastName || null,
@@ -81,7 +81,7 @@ export async function importContacts(
           timezone: row.timezone || "Asia/Kolkata",
           status: row.status || "New",
         },
-        { onConflict: "email" }
+        { onConflict: "email,userId" }
       )
       .select("id")
       .single();
@@ -94,15 +94,13 @@ export async function importContacts(
     }
   }
 
-  // If a campaign is selected, add all these contacts to the campaign
   if (campaignId && insertedContactIds.length > 0) {
     const statesToInsert = insertedContactIds.map((id) => ({
       contactId: id,
-      campaignId: campaignId,
+      campaignId,
       currentStep: 0,
       status: "New",
     }));
-
     await supabase
       .from("ContactCampaignState")
       .upsert(statesToInsert, { onConflict: "contactId,campaignId" });
@@ -113,95 +111,79 @@ export async function importContacts(
 }
 
 export async function deleteContact(id: string) {
-  await supabase.from("Contact").delete().eq("id", id);
+  const userId = await getCurrentUserId();
+  await supabase.from("Contact").delete().eq("id", id).eq("userId", userId);
   revalidatePath("/contacts");
   return { success: true };
 }
 
-export async function updateContact(
-  id: string,
-  data: {
-    name?: string;
-    email?: string;
-    company?: string;
-    firstName?: string;
-    lastName?: string;
-    jobTitle?: string;
-    phone?: string;
-    website?: string;
-    industry?: string;
-    city?: string;
-    timezone?: string;
-    status?: string;
-  }
-) {
-  await supabase.from("Contact").update(data).eq("id", id);
+export async function updateContact(id: string, data: {
+  name?: string; email?: string; company?: string;
+  firstName?: string; lastName?: string; jobTitle?: string;
+  phone?: string; website?: string; industry?: string;
+  city?: string; timezone?: string; status?: string;
+}) {
+  const userId = await getCurrentUserId();
+  await supabase.from("Contact").update(data).eq("id", id).eq("userId", userId);
   revalidatePath("/contacts");
   return { success: true };
 }
 
 export async function updateContactStatus(id: string, status: string) {
+  const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
     .update({ status })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("userId", userId);
 
-  if (error) {
-    dbLog("updateContactStatus", error);
-    return { success: false, error: error.message };
-  }
-
+  if (error) { dbLog("updateContactStatus", error); return { success: false, error: error.message }; }
   revalidatePath("/contacts");
   return { success: true };
 }
 
 export async function markDNC(id: string) {
+  const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
     .update({ isDNC: true, status: "Do Not Contact" })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("userId", userId);
 
-  if (error) {
-    dbLog("markDNC", error);
-    return { success: false, error: error.message };
-  }
-
+  if (error) { dbLog("markDNC", error); return { success: false, error: error.message }; }
   revalidatePath("/contacts");
   return { success: true };
 }
 
 export async function unsubscribeContact(id: string) {
+  const userId = await getCurrentUserId();
   const { error } = await supabase
     .from("Contact")
     .update({ isUnsubscribed: true, status: "Unsubscribed" })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("userId", userId);
 
-  if (error) {
-    dbLog("unsubscribeContact", error);
-    return { success: false, error: error.message };
-  }
-
+  if (error) { dbLog("unsubscribeContact", error); return { success: false, error: error.message }; }
   revalidatePath("/contacts");
   return { success: true };
 }
 
 export async function bulkDeleteContacts(ids: string[]) {
-  if (ids.length === 0) return { success: true };
-  await supabase.from("Contact").delete().in("id", ids);
+  if (!ids.length) return { success: true };
+  const userId = await getCurrentUserId();
+  await supabase.from("Contact").delete().in("id", ids).eq("userId", userId);
   revalidatePath("/contacts");
   return { success: true };
 }
 
 export async function bulkAddToCampaign(contactIds: string[], campaignId: string) {
-  if (contactIds.length === 0 || !campaignId) return { success: true };
-
+  if (!contactIds.length || !campaignId) return { success: true };
   const statesToInsert = contactIds.map((id) => ({
     contactId: id,
-    campaignId: campaignId,
+    campaignId,
     currentStep: 0,
     status: "New",
   }));
-
   await supabase
     .from("ContactCampaignState")
     .upsert(statesToInsert, { onConflict: "contactId,campaignId" });
