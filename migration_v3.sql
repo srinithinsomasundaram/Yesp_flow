@@ -50,3 +50,7 @@ CREATE TABLE IF NOT EXISTS "CampaignRunLog" (
   "reportSent"   BOOLEAN DEFAULT FALSE
 );
 ALTER TABLE "CampaignRunLog" DISABLE ROW LEVEL SECURITY;
+
+-- Reply tracking on ContactCampaignState
+ALTER TABLE "ContactCampaignState" ADD COLUMN IF NOT EXISTS "repliedAt"  TIMESTAMP WITH TIME ZONE;
+ALTER TABLE "ContactCampaignState" ADD COLUMN IF NOT EXISTS "replyNote"  TEXT;
