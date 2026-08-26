@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
 import { getMyAuthId, hasPermission } from "@/lib/auth-helper";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { sendTeamInviteEmail } from "@/lib/app-mailer";
 
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
@@ -91,6 +92,17 @@ export async function inviteTeamMember(teamId: string, email: string, role: Team
     teamId, email: email.toLowerCase().trim(), role, status: "invited",
   }]);
   if (error) { dbLog("inviteTeamMember", error); return { success: false, error: error.message }; }
+
+  // Send invite email (non-blocking)
+  const supa = await createSupabaseServerClient();
+  const { data: { user } } = await supa.auth.getUser();
+  const { data: team } = await supabase.from("Team").select("name").eq("id", teamId).single();
+  const inviterEmail = user?.email ?? "A teammate";
+  const teamName = team?.name ?? "the team";
+
+  sendTeamInviteEmail({ to: email.toLowerCase().trim(), teamName, inviterEmail, role }).catch((e) =>
+    console.error("[teams] invite email failed:", e.message)
+  );
 
   revalidatePath("/settings");
   return { success: true };
