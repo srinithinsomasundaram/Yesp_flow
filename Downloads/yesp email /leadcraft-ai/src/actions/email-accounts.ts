@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import nodemailer from "nodemailer";
 import { dbLog } from "@/lib/db-error";
-import { getCurrentUserId } from "@/lib/auth-helper";
+import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
 
 export type EmailAccountData = {
   label: string;
@@ -32,6 +32,7 @@ export async function getEmailAccounts() {
 }
 
 export async function createEmailAccount(data: EmailAccountData) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to add email accounts." };
   const userId = await getCurrentUserId();
   const { data: account, error } = await supabase
     .from("EmailAccount")
@@ -58,6 +59,7 @@ export async function createEmailAccount(data: EmailAccountData) {
 }
 
 export async function updateEmailAccount(id: string, data: Partial<EmailAccountData>) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update email accounts." };
   const userId = await getCurrentUserId();
   const { error } = await supabase.from("EmailAccount").update(data).eq("id", id).eq("userId", userId);
   if (error) { dbLog("updateEmailAccount", error); return { success: false, error: error.message }; }
@@ -66,6 +68,7 @@ export async function updateEmailAccount(id: string, data: Partial<EmailAccountD
 }
 
 export async function deleteEmailAccount(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to delete email accounts." };
   const userId = await getCurrentUserId();
   const { error } = await supabase.from("EmailAccount").delete().eq("id", id).eq("userId", userId);
   if (error) { dbLog("deleteEmailAccount", error); return { success: false, error: error.message }; }

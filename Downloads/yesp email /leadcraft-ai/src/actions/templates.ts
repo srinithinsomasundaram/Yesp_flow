@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { dbLog } from "@/lib/db-error";
 import { revalidatePath } from "next/cache";
-import { getCurrentUserId } from "@/lib/auth-helper";
+import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
 
 export async function getTemplates() {
   const userId = await getCurrentUserId();
@@ -21,6 +21,7 @@ export async function createTemplate(data: {
   category?: string; replyTo?: string;
   attachments?: { id: string; name: string; url: string }[];
 }) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to create templates." };
   const userId = await getCurrentUserId();
   const { data: template, error } = await supabase
     .from("Template")
@@ -42,6 +43,7 @@ export async function createTemplate(data: {
 }
 
 export async function deleteTemplate(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to delete templates." };
   const userId = await getCurrentUserId();
   const { error } = await supabase.from("Template").delete().eq("id", id).eq("userId", userId);
   if (error) {
@@ -58,6 +60,7 @@ export async function updateTemplate(id: string, data: {
   category?: string; replyTo?: string;
   attachments?: { id: string; name: string; url: string }[];
 }) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update templates." };
   const userId = await getCurrentUserId();
   const { data: template, error } = await supabase
     .from("Template")
@@ -80,6 +83,7 @@ export async function updateTemplate(id: string, data: {
 }
 
 export async function duplicateTemplate(id: string) {
+  if (!await hasPermission("admin")) return { success: false, error: "Admin access required to duplicate templates." };
   const userId = await getCurrentUserId();
   const { data: original, error: fetchError } = await supabase
     .from("Template")
