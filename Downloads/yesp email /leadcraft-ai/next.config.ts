@@ -9,6 +9,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Explicit turbopack config avoids Next.js 16 webpack/turbopack mismatch error
+  turbopack: {},
   async headers() {
     return [
       {

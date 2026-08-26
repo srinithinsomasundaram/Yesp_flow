@@ -3,38 +3,34 @@ import Link from "next/link";
 import { getSettings } from "@/actions/settings";
 import { getUser } from "@/actions/auth";
 import { getEmailActivity } from "@/actions/activity";
+import { getMyTeam } from "@/actions/teams";
 import { SettingsForm } from "@/components/SettingsForm";
+import { TeamManager } from "@/components/TeamManager";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
 
 function formatJoined(ts: string) {
-  return new Date(ts).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return new Date(ts).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 export default async function SettingsPage() {
-  const [initialSettings, user, logs] = await Promise.all([
+  const [initialSettings, user, logs, team] = await Promise.all([
     getSettings(),
     getUser(),
     getEmailActivity(25),
+    getMyTeam(),
   ]);
 
-  const email = user?.email ?? "—";
+  const email    = user?.email ?? "—";
   const initials = email.substring(0, 2).toUpperCase();
-  const joined = user?.created_at ? formatJoined(user.created_at) : null;
+  const joined   = user?.created_at ? formatJoined(user.created_at) : null;
 
   return (
     <div className="space-y-6">
@@ -46,12 +42,12 @@ export default async function SettingsPage() {
         </div>
         <h1 className="text-xl font-bold text-slate-900">Settings</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Manage your account, API credentials, and view recent activity.
+          Manage your account, API credentials, team access, and reporting.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left column: User + API Key */}
+        {/* Left column */}
         <div className="lg:col-span-2 space-y-5">
 
           {/* User Profile */}
@@ -73,9 +69,7 @@ export default async function SettingsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{email}</p>
-                  {joined && (
-                    <p className="text-xs text-slate-400 mt-0.5">Joined {joined}</p>
-                  )}
+                  {joined && <p className="text-xs text-slate-400 mt-0.5">Joined {joined}</p>}
                   <p className="text-xs text-slate-400 font-mono mt-0.5 truncate max-w-[240px]">
                     ID: {user?.id ?? "—"}
                   </p>
@@ -85,8 +79,13 @@ export default async function SettingsPage() {
             </div>
           </div>
 
-          {/* Resend API Key */}
+          {/* API Key + Reporting Email */}
           <SettingsForm initialSettings={initialSettings} />
+
+          {/* Team & RBAC */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+            <TeamManager initialTeam={team} />
+          </div>
         </div>
 
         {/* Right column: Recent Logs */}
@@ -96,10 +95,7 @@ export default async function SettingsPage() {
               <Activity className="w-3.5 h-3.5 text-blue-600" />
               <span className="text-sm font-semibold text-slate-900">Recent Activity</span>
             </div>
-            <Link
-              href="/activity"
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-            >
+            <Link href="/activity" className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
               View all <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -113,13 +109,11 @@ export default async function SettingsPage() {
           ) : (
             <div className="divide-y divide-slate-100">
               {logs.map((log: any) => {
-                const contactInitials = (log.contact?.name || log.contact?.email || "?")
-                  .substring(0, 2)
-                  .toUpperCase();
+                const initials2 = (log.contact?.name || log.contact?.email || "?").substring(0, 2).toUpperCase();
                 return (
                   <div key={log.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors">
                     <div className="w-7 h-7 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0 mt-0.5">
-                      {contactInitials}
+                      {initials2}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-slate-800 truncate">
