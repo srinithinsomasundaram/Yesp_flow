@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Save, Loader2, ArrowLeft, Mail, AlertTriangle } from "lucide-react";
+import { Settings, Save, Loader2, ArrowLeft, Mail, AlertTriangle, Play, Pause, Clock } from "lucide-react";
 import { updateCampaign } from "@/actions/campaigns";
 import { TriggerFollowUpsButton } from "@/components/TriggerFollowUpsButton";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const TIMEZONES = [
   "Asia/Kolkata",
@@ -31,8 +32,12 @@ export function CampaignSettings({
   campaign: any;
   emailAccounts: any[];
 }) {
+  const router = useRouter();
+  const isLive = campaign.status === "active" && campaign.cronEnabled;
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const [dailyLimit, setDailyLimit] = useState(campaign.dailyLimit || 200);
   const [pacingSeconds, setPacingSeconds] = useState(campaign.pacingSeconds || 30);
@@ -52,6 +57,17 @@ export function CampaignSettings({
     setSendingDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
+  };
+
+  const handleToggleAutomation = async () => {
+    setIsPublishing(true);
+    await updateCampaign(campaign.id, {
+      status: isLive ? "paused" : "active",
+      cronEnabled: !isLive,
+      ...(!isLive && !campaign.cronTime ? { cronTime: campaign.startTime || "09:00" } : {}),
+    });
+    setIsPublishing(false);
+    router.refresh();
   };
 
   const handleSave = async () => {
@@ -239,7 +255,51 @@ export function CampaignSettings({
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="space-y-3">
+          {/* Automation status bar */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {isLive ? (
+              <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Automation Live
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-slate-400" /> Automation Paused
+              </span>
+            )}
+
+            <button
+              onClick={handleToggleAutomation}
+              disabled={isPublishing || hasNoAccount}
+              title={hasNoAccount ? "Link an email account before publishing" : undefined}
+              className={`flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-xl border transition-all disabled:opacity-50 ${
+                isLive
+                  ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                  : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {isPublishing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isLive ? (
+                <Pause className="w-3.5 h-3.5" />
+              ) : (
+                <Play className="w-3.5 h-3.5" />
+              )}
+              {isPublishing ? "Updating..." : isLive ? "Pause Automation" : "Publish Automation"}
+            </button>
+
+            <div className="ml-auto flex items-center gap-3">
+              <TriggerFollowUpsButton campaignId={campaign.id} label="Run Now" />
+              <button
+                onClick={() => setIsEditing(true)}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"
+              >
+                <Settings className="w-3.5 h-3.5" /> Settings
+              </button>
+            </div>
+          </div>
+
+          {/* Campaign info row */}
           <div className="bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm flex items-center gap-5 flex-wrap">
             {linkedAccount ? (
               <span className="flex items-center gap-1.5 text-sm text-slate-600">
@@ -255,15 +315,15 @@ export function CampaignSettings({
             <span className="text-sm text-slate-600">
               <span className="font-semibold text-slate-900">{campaign.dailyLimit}</span> emails/day
             </span>
-            <span className="text-sm text-slate-600">
-              Auto:{" "}
-              <span className="font-semibold text-slate-900">
-                {campaign.cronEnabled ? `Yes at ${campaign.cronTime}` : "Off"}
-              </span>
-            </span>
-            {campaign.timezone && (
-              <span className="text-sm text-slate-600">
-                TZ: <span className="font-semibold text-slate-900">{campaign.timezone}</span>
+            {campaign.startTime && campaign.endTime && (
+              <span className="flex items-center gap-1.5 text-sm text-slate-600">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span className="font-semibold text-slate-900">
+                  {campaign.startTime} – {campaign.endTime}
+                </span>
+                {campaign.timezone && (
+                  <span className="text-slate-400 text-xs font-mono">({campaign.timezone})</span>
+                )}
               </span>
             )}
             {campaign.sendingDays && (
@@ -271,24 +331,11 @@ export function CampaignSettings({
                 Days: <span className="font-semibold text-slate-900">{campaign.sendingDays}</span>
               </span>
             )}
-            {campaign.startTime && campaign.endTime && (
+            {campaign.cronEnabled && campaign.cronTime && (
               <span className="text-sm text-slate-600">
-                Window:{" "}
-                <span className="font-semibold text-slate-900">
-                  {campaign.startTime} – {campaign.endTime}
-                </span>
+                Scheduled: <span className="font-semibold text-slate-900">{campaign.cronTime}</span>
               </span>
             )}
-          </div>
-
-          <div className="flex items-center gap-3 ml-auto">
-            <TriggerFollowUpsButton campaignId={campaign.id} label="Run Now" />
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"
-            >
-              <Settings className="w-3.5 h-3.5" /> Settings
-            </button>
           </div>
         </div>
       )}

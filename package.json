@@ -5,10 +5,11 @@
   "scripts": {
     "dev": "concurrently \"next dev\" \"node worker.js\"",
     "build": "next build",
-    "start": "concurrently \"next start\" \"node worker.js\"",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.109.0",
     "clsx": "^2.1.1",

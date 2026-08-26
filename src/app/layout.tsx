@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
 import "./globals.css";
 
-const inter = Inter({
+const inter = localFont({
+  src: [
+    { path: "../../node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2", weight: "400" },
+    { path: "../../node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2", weight: "500" },
+    { path: "../../node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2", weight: "600" },
+    { path: "../../node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2", weight: "700" },
+  ],
   variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {

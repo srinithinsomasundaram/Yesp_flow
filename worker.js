@@ -9,8 +9,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error("Missing Supabase credentials in environment variables.");
-  process.exit(1);
+  console.warn("Worker: Missing Supabase credentials — background jobs disabled.");
+  process.exit(0);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);

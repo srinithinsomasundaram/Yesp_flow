@@ -138,9 +138,9 @@ export function CampaignFlowEditor({ campaign, templates }: { campaign: any; tem
                   </button>
                   <button
                     onClick={() => handleDeleteStep(step.id)}
-                    className="text-red-600 hover:bg-red-50 p-2 rounded-xl border border-transparent hover:border-red-200 transition-all"
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all flex items-center gap-1.5"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" /> Remove
                   </button>
                 </div>
               </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Bell, Users, Megaphone, X, Menu } from "lucide-react";
 import { NotificationsPanel } from "./NotificationsPanel";
-import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-browser";
 import { searchGlobal, type SearchResult } from "@/actions/search";
 import { useRouter } from "next/navigation";
 
@@ -21,6 +21,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter();
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     const supabase = createSupabaseBrowserClient();
     const channel = supabase
       .channel("header-unread-counter")

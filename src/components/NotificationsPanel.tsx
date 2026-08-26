@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { X, Bell, Mail, CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase-browser";
 
 type ActivityItem = {
   id: string;
@@ -40,6 +40,10 @@ export function NotificationsPanel({
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
     const supabase = createSupabaseBrowserClient();
 
     // Initial load

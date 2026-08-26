@@ -9,8 +9,7 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
-  const campaigns = await getCampaigns();
-  const templates = await getTemplates();
+  const [campaigns, templates] = await Promise.all([getCampaigns(), getTemplates()]);
 
   return (
     <div className="space-y-6">
