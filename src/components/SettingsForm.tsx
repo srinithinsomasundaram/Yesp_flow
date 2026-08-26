@@ -2,25 +2,31 @@
 
 import { useState } from "react";
 import { updateSettings } from "@/actions/settings";
-import { Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
+import {
+  Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff, Mail,
+} from "lucide-react";
 
 const monoInputClass =
   "w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-900 outline-none font-mono";
+const inputClass =
+  "w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-sm text-slate-900 outline-none";
 
 export function SettingsForm({ initialSettings }: { initialSettings: any }) {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showKey, setShowKey] = useState(false);
-  const [resendKey, setResendKey] = useState(initialSettings?.resendKey || "");
+
+  const [resendKey,      setResendKey]      = useState(initialSettings?.resendKey      || "");
+  const [reportingEmail, setReportingEmail] = useState(initialSettings?.reportingEmail || "");
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setStatus(null);
-    const result = await updateSettings({ resendKey });
+    const result = await updateSettings({ resendKey, reportingEmail: reportingEmail || undefined });
     setIsSaving(false);
     if (result.success) {
-      setStatus({ type: "success", message: "Settings saved successfully." });
+      setStatus({ type: "success", message: "Settings saved." });
       setTimeout(() => setStatus(null), 4000);
     } else {
       setStatus({ type: "error", message: result.error ?? "Failed to save settings." });
@@ -29,6 +35,7 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
 
   return (
     <form onSubmit={handleSave} className="max-w-xl space-y-5">
+      {/* Resend API Key */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
           <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
@@ -63,6 +70,35 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
         {resendKey && (
           <p className="text-xs text-emerald-600 mt-1.5 font-medium flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" /> Key is set
+          </p>
+        )}
+      </div>
+
+      {/* Reporting Email */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+            <Mail className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Reporting Email</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              After every campaign run, YESP Flow will generate a PDF activity log and email it here.
+              Leave blank to skip reports.
+            </p>
+          </div>
+        </div>
+
+        <input
+          type="email"
+          placeholder="reports@yourcompany.com"
+          value={reportingEmail}
+          onChange={(e) => setReportingEmail(e.target.value)}
+          className={inputClass}
+        />
+        {reportingEmail && (
+          <p className="text-xs text-emerald-600 mt-1.5 font-medium flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Reports will be sent to {reportingEmail}
           </p>
         )}
       </div>
