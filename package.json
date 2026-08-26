@@ -1,0 +1,12 @@
+{
+  "name": "yesp-flow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix 'Downloads/yesp email /leadcraft-ai' ci && npm --prefix 'Downloads/yesp email /leadcraft-ai' run build",
+    "start": "npm --prefix 'Downloads/yesp email /leadcraft-ai' start"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

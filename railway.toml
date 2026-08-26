@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd 'Downloads/yesp email /leadcraft-ai' && npm ci && npm run build"
+
+[deploy]
+startCommand = "cd 'Downloads/yesp email /leadcraft-ai' && npm start"
+healthcheckPath = "/"
