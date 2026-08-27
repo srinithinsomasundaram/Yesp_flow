@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { updateSettings } from "@/actions/settings";
 import {
-  Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff, Mail,
+  Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff, Mail, Gauge, Clock,
 } from "lucide-react";
 
 const monoInputClass =
@@ -16,14 +16,23 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showKey, setShowKey] = useState(false);
 
-  const [resendKey,      setResendKey]      = useState(initialSettings?.resendKey      || "");
-  const [reportingEmail, setReportingEmail] = useState(initialSettings?.reportingEmail || "");
+  const [resendKey,              setResendKey]              = useState(initialSettings?.resendKey      || "");
+  const [reportingEmail,         setReportingEmail]         = useState(initialSettings?.reportingEmail || "");
+  const [runLimit,               setRunLimit]               = useState<number>(initialSettings?.runLimit ?? 75);
+  const [automationEnabled,      setAutomationEnabled]      = useState<boolean>(initialSettings?.automationEnabled ?? true);
+  const [automationIntervalMins, setAutomationIntervalMins] = useState<number>(initialSettings?.automationIntervalMins ?? 60);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     setStatus(null);
-    const result = await updateSettings({ resendKey, reportingEmail: reportingEmail || undefined });
+    const result = await updateSettings({
+      resendKey,
+      reportingEmail: reportingEmail || undefined,
+      runLimit,
+      automationEnabled,
+      automationIntervalMins,
+    });
     setIsSaving(false);
     if (result.success) {
       const msg = (result as any).emailSent
@@ -105,6 +114,95 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
         {reportingEmail && (
           <p className="text-xs text-emerald-600 mt-1.5 font-medium flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" /> Reports will be sent to {reportingEmail}
+          </p>
+        )}
+      </div>
+
+      {/* Run Limit */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+            <Gauge className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Emails Per Run</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Maximum emails sent in a single automation run. Keeps sending volume under control.
+              Applies globally across all campaigns.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={runLimit}
+            onChange={(e) => setRunLimit(Math.max(1, Math.min(500, parseInt(e.target.value) || 75)))}
+            className={inputClass + " max-w-[120px]"}
+          />
+          <span className="text-sm text-slate-500">emails / run <span className="text-slate-300">(max 500)</span></span>
+        </div>
+      </div>
+
+      {/* Automation Schedule */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="w-8 h-8 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-violet-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Automation Schedule</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              How often YESP Flow automatically processes your active campaigns in the background.
+              The campaign&apos;s own send window (start/end time, allowed days) is also respected.
+            </p>
+          </div>
+        </div>
+
+        {/* Enable / disable toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-medium text-slate-700">Enable automation</span>
+          <button
+            type="button"
+            onClick={() => setAutomationEnabled((v) => !v)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+              automationEnabled ? "bg-blue-600" : "bg-slate-200"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                automationEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Interval selector — only shown when automation is on */}
+        {automationEnabled && (
+          <div className="flex items-center gap-3">
+            <select
+              value={automationIntervalMins}
+              onChange={(e) => setAutomationIntervalMins(parseInt(e.target.value))}
+              className={inputClass + " max-w-[200px]"}
+            >
+              <option value={15}>Every 15 minutes</option>
+              <option value={30}>Every 30 minutes</option>
+              <option value={60}>Every hour</option>
+              <option value={120}>Every 2 hours</option>
+              <option value={240}>Every 4 hours</option>
+              <option value={360}>Every 6 hours</option>
+              <option value={720}>Every 12 hours</option>
+              <option value={1440}>Once a day</option>
+            </select>
+          </div>
+        )}
+
+        {!automationEnabled && (
+          <p className="text-xs text-slate-400 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Automation is off. You can still trigger sends manually.
           </p>
         )}
       </div>

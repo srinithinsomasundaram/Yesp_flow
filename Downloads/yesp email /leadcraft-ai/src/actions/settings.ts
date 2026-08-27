@@ -18,13 +18,16 @@ export async function getSettings() {
 }
 
 export async function updateSettings(settings: {
-  resendKey?:      string;
-  reportingEmail?: string;
-  fromName?:       string;
-  fromEmail?:      string;
-  replyTo?:        string;
-  smtpHost?:       string;
-  smtpPort?:       number;
+  resendKey?:              string;
+  reportingEmail?:         string;
+  fromName?:               string;
+  fromEmail?:              string;
+  replyTo?:                string;
+  smtpHost?:               string;
+  smtpPort?:               number;
+  runLimit?:               number;
+  automationEnabled?:      boolean;
+  automationIntervalMins?: number;
 }) {
   if (!await hasPermission("owner")) return { success: false, error: "Only the workspace owner can change settings." };
   const userId = await getCurrentUserId();
