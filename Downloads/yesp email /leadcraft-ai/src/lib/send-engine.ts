@@ -100,7 +100,7 @@ async function sendViaResend(
   const { data, error } = await client.emails.send({
     from:      payload.from,
     to:        [payload.to],
-    reply_to:  payload.replyTo,
+    replyTo:   payload.replyTo,
     subject:   payload.subject,
     html:      payload.html,
     text:      payload.text,
@@ -318,8 +318,18 @@ export async function runSendEngine(options: {
     let   body     = applyMergeTags(template.body    || "", contact);
     if (template.signature) body += `\n\n${template.signature}`;
     const isHtml   = /<[a-z][\s\S]*>/i.test(body);
-    const htmlBody = isHtml ? body : body.replace(/\n/g, "<br />");
-    const plainBody = isHtml ? htmlToText(body) : body;
+
+    // Unsubscribe footer — legally required for cold outreach
+    const appUrl    = process.env.NEXT_PUBLIC_APP_URL || "https://flow.yespstudio.com";
+    const unsubToken = contact.unsubscribeToken as string | undefined;
+    const unsubUrl  = unsubToken
+      ? `${appUrl}/unsubscribe?token=${unsubToken}`
+      : `${appUrl}/unsubscribe?email=${encodeURIComponent(contact.email)}`;
+    const unsubHtml = `<div style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af;font-family:sans-serif;">You received this email because you are in our outreach list. <a href="${unsubUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a></div>`;
+    const unsubText = `\n\n---\nTo unsubscribe from further emails, visit: ${unsubUrl}`;
+
+    const htmlBody  = (isHtml ? body : body.replace(/\n/g, "<br />")) + unsubHtml;
+    const plainBody = (isHtml ? htmlToText(body) : body) + unsubText;
 
     const sentAt = new Date().toISOString();
 
@@ -361,6 +371,22 @@ export async function runSendEngine(options: {
         await supabase.from("ContactCampaignState").update({
           status: "Completed", lastSent: now.toISOString(), nextActionDate: null,
         }).eq("id", state.id);
+      }
+
+      // Webhook-out notification
+      if (settings.webhookOutUrl) {
+        fetch(settings.webhookOutUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "email.sent",
+            contactEmail: contact.email,
+            contactName: contact.name || contact.email,
+            campaignName: campaign.name,
+            step: currentStepNumber + 1,
+            timestamp: sentAt,
+          }),
+        }).catch(() => {});
       }
 
       campaignDailyCounts[campaign.id]++;

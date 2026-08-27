@@ -181,7 +181,7 @@ export default async function DashboardPage() {
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-slate-800 truncate">
-                      {log.contact?.name || log.contact?.email || "Unknown"}
+                      {(log.contact as any)?.name || (log.contact as any)?.email || "Unknown"}
                     </p>
                     <p className="text-[11px] text-slate-400 truncate">{log.type}</p>
                   </div>

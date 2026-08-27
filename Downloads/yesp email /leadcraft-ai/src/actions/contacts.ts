@@ -18,6 +18,8 @@ export type ContactImportRow = {
   city?: string;
   timezone?: string;
   status?: string;
+  linkedinUrl?: string;
+  tags?: string[];
 };
 
 export async function getContacts() {
@@ -81,6 +83,9 @@ export async function importContacts(
           city: row.city || null,
           timezone: row.timezone || "Asia/Kolkata",
           status: row.status || "New",
+          linkedinUrl: row.linkedinUrl || null,
+          tags: row.tags?.length ? row.tags : [],
+          unsubscribeToken: crypto.randomUUID(),
         },
         { onConflict: "email,userId" }
       )

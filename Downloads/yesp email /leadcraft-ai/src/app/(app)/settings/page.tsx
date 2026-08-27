@@ -113,7 +113,7 @@ export default async function SettingsPage() {
           ) : (
             <div className="divide-y divide-slate-100">
               {logs.map((log: any) => {
-                const initials2 = (log.contact?.name || log.contact?.email || "?").substring(0, 2).toUpperCase();
+                const initials2 = ((log.contact as any)?.name || (log.contact as any)?.email || "?").substring(0, 2).toUpperCase();
                 return (
                   <div key={log.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors">
                     <div className="w-7 h-7 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0 mt-0.5">
@@ -121,7 +121,7 @@ export default async function SettingsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-slate-800 truncate">
-                        {log.contact?.name || log.contact?.email || "Unknown"}
+                        {(log.contact as any)?.name || (log.contact as any)?.email || "Unknown"}
                       </p>
                       <p className="text-xs text-slate-500 truncate mt-0.5">{log.type}</p>
                     </div>

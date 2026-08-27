@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { updateSettings } from "@/actions/settings";
 import {
-  Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff, Mail, Gauge, Clock,
+  Save, Loader2, KeyRound, CheckCircle2, AlertCircle, Eye, EyeOff, Mail, Gauge, Clock, Webhook,
 } from "lucide-react";
 
 const monoInputClass =
@@ -21,6 +21,7 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
   const [runLimit,               setRunLimit]               = useState<number>(initialSettings?.runLimit ?? 75);
   const [automationEnabled,      setAutomationEnabled]      = useState<boolean>(initialSettings?.automationEnabled ?? true);
   const [automationIntervalMins, setAutomationIntervalMins] = useState<number>(initialSettings?.automationIntervalMins ?? 60);
+  const [webhookOutUrl,          setWebhookOutUrl]          = useState(initialSettings?.webhookOutUrl || "");
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +33,7 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
       runLimit,
       automationEnabled,
       automationIntervalMins,
+      webhookOutUrl: webhookOutUrl || undefined,
     });
     setIsSaving(false);
     if (result.success) {
@@ -205,6 +207,37 @@ export function SettingsForm({ initialSettings }: { initialSettings: any }) {
             Automation is off. You can still trigger sends manually.
           </p>
         )}
+      </div>
+
+      {/* Outgoing Webhook */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-slate-100">
+          <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center shrink-0">
+            <Webhook className="w-4 h-4 text-teal-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Outgoing Webhook</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              YESP Flow will POST a JSON payload to this URL after every email is sent. Use it to
+              sync with your CRM, Zapier, or Slack. Leave blank to disable.
+            </p>
+          </div>
+        </div>
+        <input
+          type="url"
+          placeholder="https://hooks.zapier.com/hooks/catch/..."
+          value={webhookOutUrl}
+          onChange={(e) => setWebhookOutUrl(e.target.value)}
+          className={inputClass}
+        />
+        {webhookOutUrl && (
+          <p className="text-xs text-emerald-600 mt-1.5 font-medium flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Events will be POSTed to this URL
+          </p>
+        )}
+        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-500 leading-relaxed">
+          {`{ "event": "email.sent", "contactEmail": "...", "campaignName": "...", "step": 1, "timestamp": "..." }`}
+        </div>
       </div>
 
       {status && (

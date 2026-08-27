@@ -28,6 +28,7 @@ export async function updateSettings(settings: {
   runLimit?:               number;
   automationEnabled?:      boolean;
   automationIntervalMins?: number;
+  webhookOutUrl?:          string;
 }) {
   if (!await hasPermission("owner")) return { success: false, error: "Only the workspace owner can change settings." };
   const userId = await getCurrentUserId();

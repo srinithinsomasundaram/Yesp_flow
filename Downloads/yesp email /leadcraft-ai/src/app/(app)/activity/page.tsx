@@ -81,7 +81,7 @@ export default async function ActivityPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {entries.map((log) => {
-                      const initials = (log.contact?.name || log.contact?.email || "?")
+                      const initials = ((log.contact as any)?.name || (log.contact as any)?.email || "?")
                         .substring(0, 2).toUpperCase();
                       const status = (log as any).resendStatus as string | null;
                       return (
@@ -93,10 +93,10 @@ export default async function ActivityPage() {
                               </div>
                               <div>
                                 <div className="font-semibold text-slate-900 text-sm">
-                                  {log.contact?.name || "Unknown"}
+                                  {(log.contact as any)?.name || "Unknown"}
                                 </div>
                                 <div className="text-xs text-slate-400 font-mono">
-                                  {log.contact?.email}
+                                  {(log.contact as any)?.email}
                                 </div>
                               </div>
                             </div>

@@ -47,6 +47,8 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [status, setStatus] = useState("New");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
 
   const resetForm = () => {
     setEmail("");
@@ -61,6 +63,8 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
     setTimezone("Asia/Kolkata");
     setStatus("New");
     setSelectedCampaignId("");
+    setLinkedinUrl("");
+    setTagsInput("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,6 +73,7 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
 
     setIsSubmitting(true);
 
+    const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const result = await importContacts(
       [
         {
@@ -84,6 +89,8 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
           city,
           timezone,
           status,
+          linkedinUrl: linkedinUrl || undefined,
+          tags: tags.length ? tags : undefined,
         },
       ],
       selectedCampaignId || undefined
@@ -209,6 +216,30 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
                     onChange={(e) => setWebsite(e.target.value)}
                     className={inputClass}
                     placeholder="https://acme.com"
+                  />
+                </div>
+              </div>
+
+              {/* LinkedIn + Tags */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>LinkedIn URL</label>
+                  <input
+                    type="url"
+                    value={linkedinUrl}
+                    onChange={(e) => setLinkedinUrl(e.target.value)}
+                    className={inputClass}
+                    placeholder="https://linkedin.com/in/johndoe"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Tags (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={tagsInput}
+                    onChange={(e) => setTagsInput(e.target.value)}
+                    className={inputClass}
+                    placeholder="SaaS, Chennai, Q1"
                   />
                 </div>
               </div>
