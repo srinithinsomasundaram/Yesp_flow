@@ -1,25 +1,13 @@
 import { Activity } from "lucide-react";
 import { getEmailActivity } from "@/actions/activity";
+import { ClientTime } from "@/components/ClientTime";
 
 export const dynamic = "force-dynamic";
 
-function formatTime(ts: string) {
-  return new Date(ts).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function formatDateLabel(ts: string) {
-  const d = new Date(ts);
-  const today     = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(d, today))     return "Today";
-  if (sameDay(d, yesterday)) return "Yesterday";
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+// Groups are keyed by ISO date string (YYYY-MM-DD in UTC) so the server render
+// is consistent; the actual displayed time inside each row is client-rendered.
+function isoDateKey(ts: string) {
+  return ts.slice(0, 10); // "2026-08-27"
 }
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string; border: string }> = {
@@ -48,9 +36,9 @@ export default async function ActivityPage() {
 
   const groups: Record<string, typeof logs> = {};
   for (const log of logs) {
-    const label = formatDateLabel(log.timestamp);
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(log);
+    const key = isoDateKey(log.timestamp);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(log);
   }
 
   return (
@@ -72,11 +60,11 @@ export default async function ActivityPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(groups).map(([label, entries]) => (
-            <div key={label}>
+          {Object.entries(groups).map(([key, entries]) => (
+            <div key={key}>
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full">
-                  {label} · {entries.length} {entries.length === 1 ? "event" : "events"}
+                  {key} · {entries.length} {entries.length === 1 ? "event" : "events"}
                 </span>
                 <div className="flex-1 h-px bg-slate-100" />
               </div>
@@ -123,7 +111,7 @@ export default async function ActivityPage() {
                             <StatusBadge status={status} />
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400 font-mono tabular-nums">
-                            {formatTime(log.timestamp)}
+                            <ClientTime ts={log.timestamp} />
                           </td>
                         </tr>
                       );

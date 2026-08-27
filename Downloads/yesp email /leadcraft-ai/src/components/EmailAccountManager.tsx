@@ -41,6 +41,7 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{
     id: string;
@@ -51,11 +52,13 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
   const openEdit = (account: any) => {
     setEditingId(account.id);
+    setSaveError(null);
     setForm({
       label: account.label || "",
       senderName: account.senderName || "",
@@ -73,6 +76,13 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
+
+    if (form.provider === "resend" && !form.resendApiKey.trim()) {
+      setSaveError("A Resend API key is required.");
+      return;
+    }
+
     setIsSaving(true);
 
     const payload = {
@@ -88,13 +98,17 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
       dailyLimit: form.dailyLimit,
     };
 
-    if (editingId) {
-      await updateEmailAccount(editingId, payload);
-    } else {
-      await createEmailAccount(payload);
-    }
+    const result = editingId
+      ? await updateEmailAccount(editingId, payload)
+      : await createEmailAccount(payload);
 
     setIsSaving(false);
+
+    if (!result.success) {
+      setSaveError(result.error ?? "Failed to save account.");
+      return;
+    }
+
     setIsModalOpen(false);
     setEditingId(null);
     setForm(emptyForm);
@@ -392,6 +406,13 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none bg-white"
                 />
               </div>
+
+              {saveError && (
+                <div className="flex items-center gap-2 text-xs font-semibold px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {saveError}
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
