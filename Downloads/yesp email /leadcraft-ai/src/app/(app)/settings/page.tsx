@@ -7,6 +7,7 @@ import { getMyTeam } from "@/actions/teams";
 import { SettingsForm } from "@/components/SettingsForm";
 import { TeamManager } from "@/components/TeamManager";
 import { SignOutButton } from "@/components/SignOutButton";
+import { WebhookSetupGuide } from "@/components/WebhookSetupGuide";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export default async function SettingsPage() {
         </div>
         <h1 className="text-xl font-bold text-slate-900">Settings</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Manage your account, API credentials, team access, and reporting.
+          Manage your account, API credentials, automation schedule, webhook tracking, and team access.
         </p>
       </div>
 
@@ -79,8 +80,11 @@ export default async function SettingsPage() {
             </div>
           </div>
 
-          {/* API Key + Reporting Email */}
+          {/* API Key + Reporting Email + Automation */}
           <SettingsForm initialSettings={initialSettings} />
+
+          {/* Webhook Tracking Setup Guide */}
+          <WebhookSetupGuide />
 
           {/* Team & RBAC */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
