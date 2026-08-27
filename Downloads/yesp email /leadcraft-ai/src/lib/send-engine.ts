@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import nodemailer from "nodemailer";
 import { generateRunReportPDF, RunLogEntry, RunSummary } from "@/lib/pdf-report";
+import { revalidatePath } from "next/cache";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -142,9 +143,26 @@ export async function runSendEngine(options: {
     .select(`*, contact:Contact (*)`)
     .in("status", ["New", "Contacted", "Waiting"]);
 
-  if (campaignId) statesQuery = statesQuery.eq("campaignId", campaignId);
+  const RUN_LIMIT = Math.max(1, settings.runLimit ?? 75);
 
-  const { data: allStates, error: statesErr } = await statesQuery.limit(500);
+  if (campaignId) {
+    statesQuery = statesQuery.eq("campaignId", campaignId);
+  } else {
+    // Scope to only active (automation-enabled) campaigns for the user
+    const { data: userCampaigns } = await supabase
+      .from("Campaign")
+      .select("id")
+      .eq("userId", userId)
+      .eq("status", "active");
+    const userCampaignIds = (userCampaigns || []).map((c) => c.id);
+    if (userCampaignIds.length === 0) {
+      emit({ type: "done", sent: 0, skipped: 0, failed: 0, errors: [] });
+      return { success: true, processedCount: 0, skipped: 0, errors: [] };
+    }
+    statesQuery = statesQuery.in("campaignId", userCampaignIds);
+  }
+
+  const { data: allStates, error: statesErr } = await statesQuery.limit(RUN_LIMIT * 4);
   if (statesErr) {
     return { success: false, processedCount: 0, skipped: 0, errors: [statesErr.message] };
   }
@@ -183,6 +201,8 @@ export async function runSendEngine(options: {
 
   // ── Per-contact loop ──────────────────────────────────────────────────────
   for (const state of pendingStates) {
+    if (processedCount >= RUN_LIMIT) break;
+
     const contact = state.contact;
     if (!contact?.email) { skipped++; continue; }
     if (contact.isDNC || contact.isUnsubscribed) {
@@ -373,6 +393,12 @@ export async function runSendEngine(options: {
       console.error("[send-engine] PDF report failed:", pdfErr.message);
     }
   }
+
+  // Refresh all data-dependent pages so the UI reflects the run immediately
+  revalidatePath("/");
+  revalidatePath("/contacts");
+  revalidatePath("/campaigns");
+  revalidatePath("/queue");
 
   return { success: true, processedCount, skipped, errors };
 }

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently \"next dev\" \"node worker.js\"",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "concurrently \"next start -p ${PORT:-3000}\" \"node worker.js\"",
     "lint": "eslint"
   },
   "dependencies": {

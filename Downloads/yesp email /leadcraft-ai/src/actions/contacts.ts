@@ -183,6 +183,28 @@ export async function bulkDeleteContacts(ids: string[]) {
   return { success: true };
 }
 
+export async function markAsReplied(contactId: string, campaignId: string, replyNote?: string) {
+  if (!await hasPermission("member")) return { success: false, error: "Member access required." };
+  const { error } = await supabase
+    .from("ContactCampaignState")
+    .update({
+      status: "Replied",
+      repliedAt: new Date().toISOString(),
+      replyNote: replyNote?.trim() || null,
+      nextActionDate: null,
+    })
+    .match({ contactId, campaignId });
+
+  if (error) { dbLog("markAsReplied", error); return { success: false, error: error.message }; }
+
+  // Also update the contact's own status to Replied
+  await supabase.from("Contact").update({ status: "Replied" }).eq("id", contactId);
+
+  revalidatePath("/contacts");
+  revalidatePath("/campaigns");
+  return { success: true };
+}
+
 export async function bulkAddToCampaign(contactIds: string[], campaignId: string) {
   if (!contactIds.length || !campaignId) return { success: true };
   if (!await hasPermission("member")) return { success: false, error: "Member access required to add contacts to campaigns." };

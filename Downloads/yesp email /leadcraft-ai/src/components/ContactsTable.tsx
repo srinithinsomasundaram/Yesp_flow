@@ -373,8 +373,19 @@ export function ContactsTable({ contacts, campaigns }: { contacts: any[]; campai
                             <span className="text-xs text-slate-300">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-600">
-                          {state?.status === "New"
+                        <td className="px-4 py-3 text-xs text-slate-600">
+                          {state?.status === "Replied" ? (
+                            <div>
+                              <span className="text-emerald-600 font-semibold">
+                                {state.repliedAt
+                                  ? new Date(state.repliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                                  : "Replied"}
+                              </span>
+                              {state.replyNote && (
+                                <p className="text-xs text-slate-500 italic mt-0.5 max-w-[140px] truncate">{state.replyNote}</p>
+                              )}
+                            </div>
+                          ) : state?.status === "New"
                             ? "Today"
                             : state?.nextActionDate
                             ? new Date(state.nextActionDate).toLocaleDateString()

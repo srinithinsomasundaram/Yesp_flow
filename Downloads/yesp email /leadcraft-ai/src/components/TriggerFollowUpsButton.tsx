@@ -81,6 +81,8 @@ export function TriggerFollowUpsButton({
               } else {
                 showToast(parts.join(" · "), (event.sent ?? 0) > 0 ? "success" : "error");
               }
+              // Reload so contacts/activity tables reflect the completed run
+              setTimeout(() => window.location.reload(), 1800);
             }
           } catch {}
         }
