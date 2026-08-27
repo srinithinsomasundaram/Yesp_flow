@@ -66,6 +66,7 @@ export async function importContacts(
       [row.firstName, row.lastName].filter(Boolean).join(" ") ||
       null;
 
+    // Core upsert — only stable columns (always works even before migration_v6)
     const { data: contact, error } = await supabase
       .from("Contact")
       .upsert(
@@ -83,9 +84,6 @@ export async function importContacts(
           city: row.city || null,
           timezone: row.timezone || "Asia/Kolkata",
           status: row.status || "New",
-          linkedinUrl: row.linkedinUrl || null,
-          tags: row.tags?.length ? row.tags : [],
-          unsubscribeToken: crypto.randomUUID(),
         },
         { onConflict: "email,userId" }
       )
@@ -95,6 +93,15 @@ export async function importContacts(
     if (!error && contact) {
       importedCount++;
       insertedContactIds.push(contact.id);
+
+      // Try to save new fields added in migration_v6 — silently skips if columns don't exist yet
+      const extras: Record<string, unknown> = {};
+      if (row.linkedinUrl)     extras.linkedinUrl      = row.linkedinUrl;
+      if (row.tags?.length)    extras.tags             = row.tags;
+      if (!existing)           extras.unsubscribeToken = crypto.randomUUID();
+      if (Object.keys(extras).length) {
+        await supabase.from("Contact").update(extras).eq("id", contact.id).catch(() => {});
+      }
     } else {
       dbLog(`importContacts(${row.email})`, error);
     }
