@@ -18,7 +18,7 @@ export async function getEmailActivity(limit = 200) {
 
   const { data, error } = await supabase
     .from("EmailActivity")
-    .select(`*, contact:Contact (id, name, email, company)`)
+    .select(`id, type, timestamp, resendStatus, deliveredAt, openedAt, clickedAt, bouncedAt, complainedAt, contact:Contact (id, name, email, company)`)
     .in("contactId", contactIds)
     .order("timestamp", { ascending: false })
     .limit(limit);

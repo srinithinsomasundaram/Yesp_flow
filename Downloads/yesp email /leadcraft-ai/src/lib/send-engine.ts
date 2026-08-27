@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { generateRunReportPDF, RunLogEntry, RunSummary } from "@/lib/pdf-report";
 import { revalidatePath } from "next/cache";
 
@@ -76,6 +77,37 @@ function applyMergeTags(text: string, contact: any): string {
     result = result.replace(new RegExp(tag.replace(/[{}]/g, "\\$&"), "g"), value);
   }
   return result;
+}
+
+// Returns true when we should use the Resend HTTP API (gives back an email ID for tracking).
+// SMTP accounts fall through to nodemailer and won't have email IDs.
+function isResendDirect(account: any | null, settings: any): boolean {
+  if (account?.provider === "resend" && account?.resendApiKey) return true;
+  if (!account && settings.resendKey) return true;
+  return false;
+}
+
+function getResendApiKey(account: any | null, settings: any): string {
+  return account?.resendApiKey || settings.resendKey || "";
+}
+
+// Send via Resend HTTP API — returns the Resend email ID for webhook tracking.
+async function sendViaResend(
+  apiKey: string,
+  payload: { from: string; to: string; replyTo?: string; subject: string; html: string; text: string; attachments?: any[] }
+): Promise<string | null> {
+  const client = new Resend(apiKey);
+  const { data, error } = await client.emails.send({
+    from:      payload.from,
+    to:        [payload.to],
+    reply_to:  payload.replyTo,
+    subject:   payload.subject,
+    html:      payload.html,
+    text:      payload.text,
+    attachments: (payload.attachments || []).map((a: any) => ({ filename: a.name, path: a.url })),
+  });
+  if (error) throw new Error((error as any).message || "Resend send error");
+  return data?.id ?? null;
 }
 
 function buildTransporter(account: any | null, settings: any): nodemailer.Transporter {
@@ -292,16 +324,31 @@ export async function runSendEngine(options: {
     const sentAt = new Date().toISOString();
 
     try {
-      await transporter.sendMail({
-        from: fromStr, to: contact.email, replyTo: replyToStr, subject,
-        html: htmlBody, text: plainBody,
-        headers: { "X-Mailer": "YESPFLOW", "Precedence": "bulk" },
-        attachments: (template.attachments || []).map((a: any) => ({ filename: a.name, href: a.url })),
-      });
+      let resendEmailId: string | null = null;
+
+      if (isResendDirect(account, settings)) {
+        // Use Resend HTTP API → we get an email ID for webhook tracking
+        const apiKey = getResendApiKey(account, settings);
+        resendEmailId = await sendViaResend(apiKey, {
+          from: fromStr, to: contact.email, replyTo: replyToStr ?? undefined,
+          subject, html: htmlBody, text: plainBody,
+          attachments: template.attachments || [],
+        });
+      } else {
+        // SMTP path — no email ID available
+        await transporter.sendMail({
+          from: fromStr, to: contact.email, replyTo: replyToStr, subject,
+          html: htmlBody, text: plainBody,
+          headers: { "X-Mailer": "YESPFLOW", "Precedence": "bulk" },
+          attachments: (template.attachments || []).map((a: any) => ({ filename: a.name, href: a.url })),
+        });
+      }
 
       await supabase.from("EmailActivity").insert([{
         contactId: state.contactId, campaignId: campaign.id, userId,
         type: `Step ${currentStepNumber + 1}: ${template.name}`,
+        resendEmailId,
+        resendStatus: resendEmailId ? "sent" : null,
       }]);
 
       if (nextStep) {

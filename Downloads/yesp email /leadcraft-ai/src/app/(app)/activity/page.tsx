@@ -5,34 +5,47 @@ export const dynamic = "force-dynamic";
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
 function formatDateLabel(ts: string) {
   const d = new Date(ts);
-  const today = new Date();
+  const today     = new Date();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-
   const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  if (sameDay(d, today)) return "Today";
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, today))     return "Today";
   if (sameDay(d, yesterday)) return "Yesterday";
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string; border: string }> = {
+  sent:       { label: "Sent",       dot: "bg-slate-400",   bg: "bg-slate-50",   text: "text-slate-600",  border: "border-slate-200" },
+  delivered:  { label: "Delivered",  dot: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700",border: "border-emerald-200" },
+  delayed:    { label: "Delayed",    dot: "bg-amber-500",   bg: "bg-amber-50",   text: "text-amber-700",  border: "border-amber-200" },
+  opened:     { label: "Opened",     dot: "bg-blue-500",    bg: "bg-blue-50",    text: "text-blue-700",   border: "border-blue-200" },
+  clicked:    { label: "Clicked",    dot: "bg-violet-500",  bg: "bg-violet-50",  text: "text-violet-700", border: "border-violet-200" },
+  bounced:    { label: "Bounced",    dot: "bg-red-500",     bg: "bg-red-50",     text: "text-red-700",    border: "border-red-200" },
+  complained: { label: "Complained", dot: "bg-orange-500",  bg: "bg-orange-50",  text: "text-orange-700", border: "border-orange-200" },
+};
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return null;
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.sent;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
 }
 
 export default async function ActivityPage() {
   const logs = await getEmailActivity();
 
-  // Group by date
   const groups: Record<string, typeof logs> = {};
   for (const log of logs) {
     const label = formatDateLabel(log.timestamp);
@@ -42,7 +55,6 @@ export default async function ActivityPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
           <Activity className="w-4 h-4 text-blue-600" />
@@ -62,7 +74,6 @@ export default async function ActivityPage() {
         <div className="space-y-6">
           {Object.entries(groups).map(([label, entries]) => (
             <div key={label}>
-              {/* Date group header */}
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full">
                   {label} · {entries.length} {entries.length === 1 ? "event" : "events"}
@@ -76,15 +87,15 @@ export default async function ActivityPage() {
                     <tr>
                       <th className="px-5 py-3 font-semibold">Contact</th>
                       <th className="px-5 py-3 font-semibold">Action</th>
+                      <th className="px-5 py-3 font-semibold">Delivery</th>
                       <th className="px-5 py-3 font-semibold text-right">Time</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {entries.map((log) => {
                       const initials = (log.contact?.name || log.contact?.email || "?")
-                        .substring(0, 2)
-                        .toUpperCase();
-
+                        .substring(0, 2).toUpperCase();
+                      const status = (log as any).resendStatus as string | null;
                       return (
                         <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-5 py-3">
@@ -107,6 +118,9 @@ export default async function ActivityPage() {
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                               {log.type}
                             </span>
+                          </td>
+                          <td className="px-5 py-3">
+                            <StatusBadge status={status} />
                           </td>
                           <td className="px-5 py-3 text-right text-xs text-slate-400 font-mono tabular-nums">
                             {formatTime(log.timestamp)}
