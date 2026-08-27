@@ -100,7 +100,7 @@ export async function importContacts(
       if (row.tags?.length)    extras.tags             = row.tags;
       if (!existing)           extras.unsubscribeToken = crypto.randomUUID();
       if (Object.keys(extras).length) {
-        await supabase.from("Contact").update(extras).eq("id", contact.id).catch(() => {});
+        try { await supabase.from("Contact").update(extras).eq("id", contact.id); } catch { /* columns may not exist yet */ }
       }
     } else {
       dbLog(`importContacts(${row.email})`, error);
