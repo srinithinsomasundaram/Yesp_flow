@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Loader2, CheckCircle2, AlertCircle, Mail } from "lucide-react";
+import { Sparkles, Loader2, CheckCircle2, AlertCircle, Mail, Download } from "lucide-react";
 
 interface Progress {
   total:   number;
@@ -20,6 +20,7 @@ export function TriggerFollowUpsButton({
 }) {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress]   = useState<Progress | null>(null);
+  const [runLogId, setRunLogId]   = useState<string | null>(null);
   const [toast, setToast]         = useState<{
     show: boolean; message: string; type: "success" | "error";
   }>({ show: false, message: "", type: "success" });
@@ -73,6 +74,7 @@ export function TriggerFollowUpsButton({
             } else if (event.type === "skipped" || event.type === "failed") {
               setProgress(p => p ? { ...p, done: p.done + 1, current: event.email || "" } : p);
             } else if (event.type === "done") {
+              if (event.runLogId) setRunLogId(event.runLogId);
               const parts: string[] = [`Sent ${event.sent ?? 0}`];
               if ((event.skipped ?? 0) > 0)      parts.push(`${event.skipped} skipped`);
               if ((event.failed  ?? 0) > 0)      parts.push(`${event.failed} failed`);
@@ -81,6 +83,8 @@ export function TriggerFollowUpsButton({
               } else {
                 showToast(parts.join(" · "), (event.sent ?? 0) > 0 ? "success" : "error");
               }
+              // Reload so contacts/activity tables reflect the completed run
+              setTimeout(() => window.location.reload(), 5000);
             }
           } catch {}
         }
@@ -157,6 +161,16 @@ export function TriggerFollowUpsButton({
             <AlertCircle className="w-5 h-5 text-red-600" />
           )}
           <span className="text-sm font-bold">{toast.message}</span>
+          {toast.type === "success" && runLogId && (
+            <a
+              href={`/api/report?runId=${runLogId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-2 flex items-center gap-1 text-xs font-semibold text-emerald-700 underline underline-offset-2 hover:text-emerald-900 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" /> Report
+            </a>
+          )}
         </div>
       )}
     </div>

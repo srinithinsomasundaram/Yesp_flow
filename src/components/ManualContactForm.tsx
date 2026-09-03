@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserPlus, X, Loader2 } from "lucide-react";
 import { importContacts } from "@/actions/contacts";
 
@@ -32,6 +33,7 @@ const CONTACT_STATUSES = [
 ];
 
 export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,6 +49,8 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [status, setStatus] = useState("New");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
 
   const resetForm = () => {
     setEmail("");
@@ -61,6 +65,8 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
     setTimezone("Asia/Kolkata");
     setStatus("New");
     setSelectedCampaignId("");
+    setLinkedinUrl("");
+    setTagsInput("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,34 +75,44 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
 
     setIsSubmitting(true);
 
-    const result = await importContacts(
-      [
-        {
-          email,
-          firstName,
-          lastName,
-          name: [firstName, lastName].filter(Boolean).join(" ") || undefined,
-          company,
-          jobTitle,
-          phone,
-          website,
-          industry,
-          city,
-          timezone,
-          status,
-        },
-      ],
-      selectedCampaignId || undefined
-    );
+    try {
+      const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+      const result = await importContacts(
+        [
+          {
+            email,
+            firstName,
+            lastName,
+            name: [firstName, lastName].filter(Boolean).join(" ") || undefined,
+            company,
+            jobTitle,
+            phone,
+            website,
+            industry,
+            city,
+            timezone,
+            status,
+            linkedinUrl: linkedinUrl || undefined,
+            tags: tags.length ? tags : undefined,
+          },
+        ],
+        selectedCampaignId || undefined
+      );
+
+      if (result.success && result.count > 0) {
+        setIsOpen(false);
+        resetForm();
+        router.refresh();
+      } else if (result.success && result.count === 0) {
+        alert("Contact was not saved. Check that the email is valid and not already marked as DNC/Unsubscribed.");
+      } else {
+        alert(`Error adding contact: ${(result as any).error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      alert(`Error: ${err?.message || "Unknown error"}`);
+    }
 
     setIsSubmitting(false);
-
-    if (result.success) {
-      setIsOpen(false);
-      resetForm();
-    } else {
-      alert("Error adding contact");
-    }
   };
 
   const inputClass =
@@ -209,6 +225,30 @@ export function ManualContactForm({ campaigns }: { campaigns: any[] }) {
                     onChange={(e) => setWebsite(e.target.value)}
                     className={inputClass}
                     placeholder="https://acme.com"
+                  />
+                </div>
+              </div>
+
+              {/* LinkedIn + Tags */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>LinkedIn URL</label>
+                  <input
+                    type="url"
+                    value={linkedinUrl}
+                    onChange={(e) => setLinkedinUrl(e.target.value)}
+                    className={inputClass}
+                    placeholder="https://linkedin.com/in/johndoe"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Tags (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={tagsInput}
+                    onChange={(e) => setTagsInput(e.target.value)}
+                    className={inputClass}
+                    placeholder="SaaS, Chennai, Q1"
                   />
                 </div>
               </div>

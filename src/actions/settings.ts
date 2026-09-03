@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
 import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
-import { sendReportingEmailConfirmation } from "@/lib/app-mailer";
+import { sendReportingEmailConfirmation, sendTestMail } from "@/lib/app-mailer";
 
 export async function getSettings() {
   const userId = await getCurrentUserId();
@@ -18,27 +18,28 @@ export async function getSettings() {
 }
 
 export async function updateSettings(settings: {
-  resendKey?:      string;
-  reportingEmail?: string;
-  fromName?:       string;
-  fromEmail?:      string;
-  replyTo?:        string;
-  smtpHost?:       string;
-  smtpPort?:       number;
+  resendKey?:              string;
+  reportingEmail?:         string;
+  fromName?:               string;
+  fromEmail?:              string;
+  replyTo?:                string;
+  smtpHost?:               string;
+  smtpPort?:               number;
+  runLimit?:               number;
+  automationEnabled?:      boolean;
+  automationIntervalMins?: number;
+  webhookOutUrl?:          string;
 }) {
   if (!await hasPermission("owner")) return { success: false, error: "Only the workspace owner can change settings." };
   const userId = await getCurrentUserId();
 
-  // Fetch existing row to detect reportingEmail change and get the stored resendKey
+  // Fetch existing row to detect reportingEmail change
   const { data: existing } = await supabase
-    .from("Settings").select("reportingEmail, resendKey").eq("id", userId).maybeSingle();
+    .from("Settings").select("reportingEmail").eq("id", userId).maybeSingle();
 
   const prevReportingEmail = existing?.reportingEmail ?? null;
   const newReportingEmail  = settings.reportingEmail?.trim() || null;
   const reportingEmailChanged = !!(newReportingEmail && newReportingEmail !== prevReportingEmail);
-
-  // The effective API key: use the one being saved (if provided), else the stored one
-  const effectiveApiKey = (settings.resendKey?.trim() || existing?.resendKey || "").trim();
 
   const { error } = await supabase.from("Settings").upsert({ id: userId, ...settings });
   if (error) {
@@ -48,13 +49,10 @@ export async function updateSettings(settings: {
 
   revalidatePath("/settings");
 
-  // Send confirmation test email if reporting email was set/changed
+  // Send confirmation email if reporting address was set/changed
   if (reportingEmailChanged) {
-    if (!effectiveApiKey) {
-      return { success: true, emailWarning: "Settings saved, but no Resend API key is configured — reporting confirmation email was not sent." };
-    }
     try {
-      await sendReportingEmailConfirmation(newReportingEmail!, effectiveApiKey);
+      await sendReportingEmailConfirmation(newReportingEmail!);
       return { success: true, emailSent: true };
     } catch (e: any) {
       return { success: true, emailWarning: `Settings saved, but confirmation email failed: ${e.message}` };
@@ -62,4 +60,24 @@ export async function updateSettings(settings: {
   }
 
   return { success: true };
+}
+
+export async function sendTestEmail(): Promise<{ success: boolean; error?: string }> {
+  const userId = await getCurrentUserId();
+  const { data: settings } = await supabase
+    .from("Settings")
+    .select("reportingEmail")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!settings?.reportingEmail) {
+    return { success: false, error: "No reporting email configured. Save a reporting email first." };
+  }
+
+  try {
+    await sendTestMail(settings.reportingEmail);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
 }

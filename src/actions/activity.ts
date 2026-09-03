@@ -3,26 +3,27 @@
 import { supabase } from "@/lib/supabase";
 import { dbLog } from "@/lib/db-error";
 import { getCurrentUserId } from "@/lib/auth-helper";
+import type { ActivityRow } from "@/types/db";
+import { ACTIVITY_PAGE_SIZE } from "@/lib/pagination";
 
-export async function getEmailActivity(limit = 200) {
+export async function getEmailActivity(
+  limit = ACTIVITY_PAGE_SIZE,
+  offset = 0
+): Promise<ActivityRow[]> {
   const userId = await getCurrentUserId();
 
-  // Get this user's contact IDs first, then filter activity
-  const { data: contacts } = await supabase
-    .from("Contact")
-    .select("id")
-    .eq("userId", userId);
-
-  const contactIds = (contacts || []).map((c) => c.id);
-  if (!contactIds.length) return [];
-
+  // Filter directly by userId — avoids building a huge .in([...contactIds]) URL
+  // that blows undici's 16 KB header limit when the contact list is large.
   const { data, error } = await supabase
     .from("EmailActivity")
-    .select(`*, contact:Contact (id, name, email, company)`)
-    .in("contactId", contactIds)
+    .select(
+      `id, type, timestamp, resendStatus, deliveredAt, openedAt, clickedAt, bouncedAt, complainedAt,
+       contact:Contact (id, name, email, company)`
+    )
+    .eq("userId", userId)
     .order("timestamp", { ascending: false })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
 
   if (error) dbLog("getEmailActivity", error);
-  return data || [];
+  return (data || []) as unknown as ActivityRow[];
 }

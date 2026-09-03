@@ -12,6 +12,9 @@ import {
   Loader2,
   Save,
   Wifi,
+  Inbox,
+  ShieldCheck,
+  BarChart2,
 } from "lucide-react";
 import {
   createEmailAccount,
@@ -19,6 +22,7 @@ import {
   deleteEmailAccount,
   testEmailAccount,
 } from "@/actions/email-accounts";
+import type { EmailAccount } from "@/types/db";
 
 const PROVIDERS = ["smtp", "resend"] as const;
 type Provider = (typeof PROVIDERS)[number];
@@ -34,13 +38,18 @@ const emptyForm = {
   smtpPass: "",
   resendApiKey: "",
   dailyLimit: 50,
+  tlsMode: "opportunistic" as "opportunistic" | "enforced",
+  imapEnabled: false,
+  imapHost: "",
+  imapPort: 993,
 };
 
-export function EmailAccountManager({ accounts }: { accounts: any[] }) {
+export function EmailAccountManager({ accounts }: { accounts: EmailAccount[] }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{
     id: string;
@@ -51,11 +60,13 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
-  const openEdit = (account: any) => {
+  const openEdit = (account: EmailAccount) => {
     setEditingId(account.id);
+    setSaveError(null);
     setForm({
       label: account.label || "",
       senderName: account.senderName || "",
@@ -67,12 +78,23 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
       smtpPass: account.smtpPass || "",
       resendApiKey: account.resendApiKey || "",
       dailyLimit: account.dailyLimit || 50,
+      tlsMode: (account.tlsMode || "opportunistic") as "opportunistic" | "enforced",
+      imapEnabled: account.imapEnabled ?? false,
+      imapHost: account.imapHost || "",
+      imapPort: account.imapPort || 993,
     });
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
+
+    if (form.provider === "resend" && !form.resendApiKey.trim()) {
+      setSaveError("A Resend API key is required.");
+      return;
+    }
+
     setIsSaving(true);
 
     const payload = {
@@ -86,15 +108,23 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
       smtpPass: form.smtpPass || undefined,
       resendApiKey: form.resendApiKey || undefined,
       dailyLimit: form.dailyLimit,
+      tlsMode: form.provider === "smtp" ? form.tlsMode : undefined,
+      imapEnabled: form.provider === "smtp" ? form.imapEnabled : false,
+      imapHost: form.provider === "smtp" && form.imapEnabled ? (form.imapHost || form.smtpHost.replace("smtp.", "imap.")) : undefined,
+      imapPort: form.imapPort,
     };
 
-    if (editingId) {
-      await updateEmailAccount(editingId, payload);
-    } else {
-      await createEmailAccount(payload);
-    }
+    const result = editingId
+      ? await updateEmailAccount(editingId, payload)
+      : await createEmailAccount(payload);
 
     setIsSaving(false);
+
+    if (!result.success) {
+      setSaveError(result.error ?? "Failed to save account.");
+      return;
+    }
+
     setIsModalOpen(false);
     setEditingId(null);
     setForm(emptyForm);
@@ -168,6 +198,16 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
                   <span className="font-semibold text-slate-600">Daily limit:</span>{" "}
                   {account.dailyLimit} emails
                 </p>
+                {account.provider === "smtp" && account.tlsMode === "enforced" && (
+                  <p className="flex items-center gap-1 text-blue-600 font-semibold mt-1">
+                    <ShieldCheck className="w-3 h-3" /> Enforced TLS
+                  </p>
+                )}
+                {account.imapEnabled && (
+                  <p className="flex items-center gap-1 text-emerald-600 font-semibold mt-1">
+                    <Inbox className="w-3 h-3" /> Reply detection active
+                  </p>
+                )}
               </div>
 
               {testResult && testResult.id === account.id && (
@@ -373,6 +413,97 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
                       />
                     </div>
                   </div>
+
+                  {/* TLS Mode */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" /> TLS Mode
+                    </label>
+                    <div className="flex gap-2">
+                      {(["opportunistic", "enforced"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setForm({ ...form, tlsMode: mode })}
+                          className={`flex-1 text-xs font-semibold py-2 px-3 rounded-xl border transition-all ${
+                            form.tlsMode === mode
+                              ? "bg-blue-50 border-blue-300 text-blue-700"
+                              : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                          }`}
+                        >
+                          {mode === "opportunistic" ? "Opportunistic (recommended)" : "Enforced TLS"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      {form.tlsMode === "enforced"
+                        ? "Connection will fail if the server doesn't support TLS."
+                        : "Tries TLS first; falls back to plaintext if the server can't do it."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Resend tracking info */}
+              {form.provider === "resend" && (
+                <div className="border border-violet-200 rounded-xl p-4 bg-violet-50 space-y-2">
+                  <p className="text-xs font-semibold text-violet-800 flex items-center gap-1.5">
+                    <BarChart2 className="w-3.5 h-3.5" /> Email tracking via Resend webhooks
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Opens", "Clicks", "Bounces", "Spam reports", "Deliveries"].map((t) => (
+                      <span key={t} className="text-xs bg-white border border-violet-200 text-violet-700 px-2 py-0.5 rounded-full font-medium">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-violet-600">
+                    Tracked automatically when you configure the webhook in Resend dashboard. See
+                    the Webhook Tracking Setup guide in Settings → General.
+                  </p>
+                </div>
+              )}
+
+              {/* IMAP Reply Detection — SMTP only */}
+              {form.provider === "smtp" && (
+                <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.imapEnabled}
+                      onChange={(e) => setForm({ ...form, imapEnabled: e.target.checked })}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                    />
+                    <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Inbox className="w-3.5 h-3.5 text-blue-600" />
+                      Enable auto reply detection (IMAP)
+                    </span>
+                  </label>
+                  {form.imapEnabled && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold text-slate-600 block mb-1">IMAP Host</label>
+                        <input
+                          value={form.imapHost}
+                          onChange={(e) => setForm({ ...form, imapHost: e.target.value })}
+                          placeholder={form.smtpHost.replace("smtp.", "imap.")}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 outline-none bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600 block mb-1">IMAP Port</label>
+                        <input
+                          type="number"
+                          value={form.imapPort}
+                          onChange={(e) => setForm({ ...form, imapPort: parseInt(e.target.value) || 993 })}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 outline-none bg-white"
+                        />
+                      </div>
+                      <p className="col-span-3 text-xs text-slate-400">
+                        Uses the same username &amp; password as your SMTP settings. Worker polls every 5 min and auto-marks replies.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -392,6 +523,13 @@ export function EmailAccountManager({ accounts }: { accounts: any[] }) {
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none bg-white"
                 />
               </div>
+
+              {saveError && (
+                <div className="flex items-center gap-2 text-xs font-semibold px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {saveError}
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                 <button

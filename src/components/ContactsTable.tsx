@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Users, Trash2, Send, Loader2, Calendar } from "lucide-react";
 import { ContactActions } from "@/components/ContactActions";
 import { bulkDeleteContacts, bulkAddToCampaign } from "@/actions/contacts";
+import type { ContactRow } from "@/types/db";
 
 function formatDateLabel(date: Date): string {
   const now = new Date();
@@ -50,7 +51,7 @@ function getCampaignStatusStyle(status: string) {
 
 const CONTACT_STATUS_FILTERS = ["All", "New", "Active", "Replied", "Interested", "Not Interested", "Do Not Contact", "Unsubscribed"];
 
-export function ContactsTable({ contacts, campaigns }: { contacts: any[]; campaigns: any[] }) {
+export function ContactsTable({ contacts, campaigns }: { contacts: ContactRow[]; campaigns: { id: string; name: string }[] }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedCampaignForBulk, setSelectedCampaignForBulk] = useState("");
@@ -114,7 +115,7 @@ export function ContactsTable({ contacts, campaigns }: { contacts: any[]; campai
   }
 
   // Group contacts by date added
-  const groupMap: Record<string, { sortKey: number; contacts: any[] }> = {};
+  const groupMap: Record<string, { sortKey: number; contacts: ContactRow[] }> = {};
   for (const contact of filteredContacts) {
     const date = new Date(contact.createdAt);
     const label = formatDateLabel(date);
@@ -331,6 +332,15 @@ export function ContactsTable({ contacts, campaigns }: { contacts: any[]; campai
                               <div className="text-xs text-slate-500 font-mono">{contact.email}</div>
                               {contact.company && (
                                 <div className="text-xs text-slate-400">{contact.company}</div>
+                              )}
+                              {Array.isArray(contact.tags) && contact.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {contact.tags.slice(0, 3).map((tag: string) => (
+                                    <span key={tag} className="text-[10px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded-full font-medium">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           </div>

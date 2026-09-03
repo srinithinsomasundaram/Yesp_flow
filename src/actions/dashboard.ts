@@ -2,16 +2,27 @@
 
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
-import nodemailer from "nodemailer";
 import { getSettings } from "./settings";
 import { getCurrentUserId } from "@/lib/auth-helper";
-import { runSendEngine, htmlToText } from "@/lib/send-engine";
+import { runSendEngine, htmlToText, applyMergeTags, buildTransporter, buildFromStr } from "@/lib/send-engine";
 
 // ── Dashboard Metrics ────────────────────────────────────────────────────
 
 export async function getDashboardMetrics() {
+  const userId = await getCurrentUserId();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Scope all queries to the current workspace via the Campaign → userId join.
+  const { data: userCampaigns } = await supabase
+    .from("Campaign")
+    .select("id")
+    .eq("userId", userId);
+  const campaignIds = (userCampaigns || []).map((c) => c.id);
+
+  if (!campaignIds.length) {
+    return { newContacts: 0, followUps: 0, replies: 0, bounced: 0, actions: [] };
+  }
 
   const [
     { count: newContacts },
@@ -20,11 +31,15 @@ export async function getDashboardMetrics() {
     { count: bounced },
     { data: actionsData },
   ] = await Promise.all([
-    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).eq("status", "New"),
-    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).in("status", ["Contacted", "Waiting"]).lte("nextActionDate", new Date().toISOString()),
-    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).eq("status", "Replied"),
-    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).eq("status", "Bounced"),
-    supabase.from("ContactCampaignState").select(`*, contact:Contact (*), campaign:Campaign (*, steps:CampaignStep (*, template:Template (*)))`).or(`status.eq.New,and(status.in.(Contacted,Waiting),nextActionDate.lte.${new Date().toISOString()})`).limit(50),
+    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).in("campaignId", campaignIds).eq("status", "New"),
+    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).in("campaignId", campaignIds).in("status", ["Contacted", "Waiting"]).lte("nextActionDate", new Date().toISOString()),
+    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).in("campaignId", campaignIds).eq("status", "Replied"),
+    supabase.from("ContactCampaignState").select("*", { count: "exact", head: true }).in("campaignId", campaignIds).eq("status", "Bounced"),
+    supabase.from("ContactCampaignState")
+      .select(`*, contact:Contact (*), campaign:Campaign (*, steps:CampaignStep (*, template:Template (*)))`)
+      .in("campaignId", campaignIds)
+      .or(`status.eq.New,and(status.in.(Contacted,Waiting),nextActionDate.lte.${new Date().toISOString()})`)
+      .limit(50),
   ]);
 
   return {
@@ -52,51 +67,6 @@ export async function triggerFollowUps(campaignId?: string, force = false) {
 
 // ── Test Send ─────────────────────────────────────────────────────────────
 
-function applyMergeTags(text: string, contact: any): string {
-  const fullName = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "";
-  const tags: Record<string, string> = {
-    "{{name}}": fullName,
-    "{{firstName}}": contact.firstName || fullName.split(" ")[0] || "",
-    "{{lastName}}": contact.lastName || fullName.split(" ").slice(1).join(" ") || "",
-    "{{email}}": contact.email || "",
-    "{{company}}": contact.company || "",
-    "{{jobTitle}}": contact.jobTitle || "",
-    "{{city}}": contact.city || "",
-    "{{phone}}": contact.phone || "",
-    "{{website}}": contact.website || "",
-    "{{industry}}": contact.industry || "",
-  };
-  let result = text;
-  for (const [tag, value] of Object.entries(tags)) {
-    result = result.replace(new RegExp(tag.replace(/[{}]/g, "\\$&"), "g"), value);
-  }
-  return result;
-}
-
-function buildTransporter(account: any | null, settings: any): nodemailer.Transporter {
-  if (account) {
-    const isResend = account.provider === "resend";
-    return nodemailer.createTransport({
-      host: isResend ? "smtp.resend.com" : account.smtpHost,
-      port: account.smtpPort || 465,
-      secure: (account.smtpPort || 465) === 465,
-      auth: { user: isResend ? "resend" : account.smtpUser, pass: isResend ? account.resendApiKey : account.smtpPass },
-    });
-  }
-  return nodemailer.createTransport({
-    host: settings.smtpHost || "smtp.resend.com", port: settings.smtpPort || 465,
-    secure: (settings.smtpPort || 465) === 465, auth: { user: "resend", pass: settings.resendKey },
-  });
-}
-
-function buildFromStr(account: any | null, settings: any): string | null {
-  if (account?.senderEmail)
-    return account.senderName ? `"${account.senderName}" <${account.senderEmail}>` : account.senderEmail;
-  if (settings.fromEmail)
-    return settings.fromName ? `"${settings.fromName}" <${settings.fromEmail}>` : settings.fromEmail;
-  return null;
-}
-
 export async function sendTestEmail(
   campaignId: string,
   stepId: string,
@@ -104,16 +74,22 @@ export async function sendTestEmail(
 ): Promise<{ success: boolean; error?: string }> {
   const settings = await getSettings();
 
-  const { data: campaign, error: campErr } = await supabase.from("Campaign").select("*").eq("id", campaignId).single();
+  const userId = await getCurrentUserId();
+
+  const { data: campaign, error: campErr } = await supabase
+    .from("Campaign").select("*").eq("id", campaignId).eq("userId", userId).single();
   if (campErr || !campaign) return { success: false, error: `Campaign not found: ${campErr?.message ?? "no data"}` };
 
   let emailAccount: any = null;
   if (campaign.emailAccountId) {
-    const { data: acct } = await supabase.from("EmailAccount").select("*").eq("id", campaign.emailAccountId).single();
+    // Verify the email account also belongs to this user
+    const { data: acct } = await supabase
+      .from("EmailAccount").select("*").eq("id", campaign.emailAccountId).eq("userId", userId).single();
     emailAccount = acct ?? null;
   }
 
-  const { data: step, error: stepErr } = await supabase.from("CampaignStep").select(`*, template:Template(*)`).eq("id", stepId).single();
+  const { data: step, error: stepErr } = await supabase
+    .from("CampaignStep").select(`*, template:Template(*)`).eq("id", stepId).single();
   if (stepErr || !step?.template) return { success: false, error: `Step not found: ${stepErr?.message ?? "no template"}` };
 
   const template = step.template;

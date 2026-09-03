@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { generateRunReportPDF, RunLogEntry, RunSummary } from "@/lib/pdf-report";
+import { revalidatePath } from "next/cache";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,7 +62,7 @@ export function htmlToText(html: string): string {
     .replace(/&#39;/g, "'").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function applyMergeTags(text: string, contact: any): string {
+export function applyMergeTags(text: string, contact: any): string {
   const fullName = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "";
   const tags: Record<string, string> = {
     "{{name}}": fullName, "{{firstName}}": contact.firstName || fullName.split(" ")[0] || "",
@@ -77,13 +79,46 @@ function applyMergeTags(text: string, contact: any): string {
   return result;
 }
 
-function buildTransporter(account: any | null, settings: any): nodemailer.Transporter {
+// Returns true when we should use the Resend HTTP API (gives back an email ID for tracking).
+// SMTP accounts fall through to nodemailer and won't have email IDs.
+function isResendDirect(account: any | null): boolean {
+  return account?.provider === "resend" && !!account?.resendApiKey;
+}
+
+function getResendApiKey(account: any): string {
+  return account?.resendApiKey || "";
+}
+
+// Send via Resend HTTP API — returns the Resend email ID for webhook tracking.
+async function sendViaResend(
+  apiKey: string,
+  payload: { from: string; to: string; replyTo?: string; subject: string; html: string; text: string; attachments?: any[] }
+): Promise<string | null> {
+  const client = new Resend(apiKey);
+  const { data, error } = await client.emails.send({
+    from:      payload.from,
+    to:        [payload.to],
+    replyTo:   payload.replyTo,
+    subject:   payload.subject,
+    html:      payload.html,
+    text:      payload.text,
+    attachments: (payload.attachments || []).map((a: any) => ({ filename: a.name, path: a.url })),
+  });
+  if (error) throw new Error((error as any).message || "Resend send error");
+  return data?.id ?? null;
+}
+
+export function buildTransporter(account: any | null, settings: any): nodemailer.Transporter {
   if (account) {
     const isResend = account.provider === "resend";
+    const port = account.smtpPort || 465;
+    const secure = port === 465;
+    const requireTLS = !isResend && !secure && account.tlsMode === "enforced";
     return nodemailer.createTransport({
       host: isResend ? "smtp.resend.com" : account.smtpHost,
-      port: account.smtpPort || 465,
-      secure: (account.smtpPort || 465) === 465,
+      port,
+      secure,
+      ...(requireTLS ? { requireTLS: true } : {}),
       auth: { user: isResend ? "resend" : account.smtpUser, pass: isResend ? account.resendApiKey : account.smtpPass },
     });
   }
@@ -94,7 +129,7 @@ function buildTransporter(account: any | null, settings: any): nodemailer.Transp
   });
 }
 
-function buildFromStr(account: any | null, settings: any): string | null {
+export function buildFromStr(account: any | null, settings: any): string | null {
   if (account?.senderEmail)
     return account.senderName ? `"${account.senderName}" <${account.senderEmail}>` : account.senderEmail;
   if (settings.fromEmail)
@@ -117,6 +152,7 @@ export interface SendProgressEvent {
   reason?:  string;
   errors?:  string[];
   campaignName?: string;
+  runLogId?: string;
 }
 
 // ── Core send engine ───────────────────────────────────────────────────────
@@ -142,9 +178,26 @@ export async function runSendEngine(options: {
     .select(`*, contact:Contact (*)`)
     .in("status", ["New", "Contacted", "Waiting"]);
 
-  if (campaignId) statesQuery = statesQuery.eq("campaignId", campaignId);
+  const RUN_LIMIT = Math.max(1, settings.runLimit ?? 75);
 
-  const { data: allStates, error: statesErr } = await statesQuery.limit(500);
+  if (campaignId) {
+    statesQuery = statesQuery.eq("campaignId", campaignId);
+  } else {
+    // Scope to only active (automation-enabled) campaigns for the user
+    const { data: userCampaigns } = await supabase
+      .from("Campaign")
+      .select("id")
+      .eq("userId", userId)
+      .eq("status", "active");
+    const userCampaignIds = (userCampaigns || []).map((c) => c.id);
+    if (userCampaignIds.length === 0) {
+      emit({ type: "done", sent: 0, skipped: 0, failed: 0, errors: [] });
+      return { success: true, processedCount: 0, skipped: 0, errors: [] };
+    }
+    statesQuery = statesQuery.in("campaignId", userCampaignIds);
+  }
+
+  const { data: allStates, error: statesErr } = await statesQuery.limit(RUN_LIMIT * 4);
   if (statesErr) {
     return { success: false, processedCount: 0, skipped: 0, errors: [statesErr.message] };
   }
@@ -183,6 +236,8 @@ export async function runSendEngine(options: {
 
   // ── Per-contact loop ──────────────────────────────────────────────────────
   for (const state of pendingStates) {
+    if (processedCount >= RUN_LIMIT) break;
+
     const contact = state.contact;
     if (!contact?.email) { skipped++; continue; }
     if (contact.isDNC || contact.isUnsubscribed) {
@@ -223,14 +278,14 @@ export async function runSendEngine(options: {
     }
     const account = emailAccountCache[campaign.id];
 
-    if (!account && !settings.resendKey) {
-      errors.push(`"${campaign.name}": no email account or API key.`);
+    if (!account) {
+      errors.push(`"${campaign.name}" skipped — no email account linked. Go to Email Accounts and add one.`);
       skipped++;
       continue;
     }
     const fromStr = buildFromStr(account, settings);
     if (!fromStr) {
-      errors.push(`"${campaign.name}": no sender email — link an Email Account.`);
+      errors.push(`"${campaign.name}" skipped — email account has no sender address configured.`);
       skipped++;
       continue;
     }
@@ -264,24 +319,49 @@ export async function runSendEngine(options: {
     const template = currentStep.template;
     const subject  = applyMergeTags(template.subject || "", contact);
     let   body     = applyMergeTags(template.body    || "", contact);
-    if (template.signature) body += `\n\n${template.signature}`;
     const isHtml   = /<[a-z][\s\S]*>/i.test(body);
-    const htmlBody = isHtml ? body : body.replace(/\n/g, "<br />");
-    const plainBody = isHtml ? htmlToText(body) : body;
+    if (template.signature) body += isHtml ? `<br><br>${template.signature}` : `\n\n${template.signature}`;
+
+    // Unsubscribe footer — legally required for cold outreach
+    const appUrl    = process.env.NEXT_PUBLIC_APP_URL || "https://flow.yespstudio.com";
+    const unsubToken = contact.unsubscribeToken as string | undefined;
+    const unsubUrl  = unsubToken
+      ? `${appUrl}/unsubscribe?token=${unsubToken}`
+      : `${appUrl}/unsubscribe?email=${encodeURIComponent(contact.email)}`;
+    const unsubHtml = `<div style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af;font-family:sans-serif;">You received this email because you are in our outreach list. <a href="${unsubUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a></div>`;
+    const unsubText = `\n\n---\nTo unsubscribe from further emails, visit: ${unsubUrl}`;
+
+    const htmlBody  = (isHtml ? body : body.replace(/\n/g, "<br />")) + unsubHtml;
+    const plainBody = (isHtml ? htmlToText(body) : body) + unsubText;
 
     const sentAt = new Date().toISOString();
 
     try {
-      await transporter.sendMail({
-        from: fromStr, to: contact.email, replyTo: replyToStr, subject,
-        html: htmlBody, text: plainBody,
-        headers: { "X-Mailer": "YESPFLOW", "Precedence": "bulk" },
-        attachments: (template.attachments || []).map((a: any) => ({ filename: a.name, href: a.url })),
-      });
+      let resendEmailId: string | null = null;
+
+      if (isResendDirect(account)) {
+        // Use Resend HTTP API → we get an email ID for webhook tracking
+        const apiKey = getResendApiKey(account);
+        resendEmailId = await sendViaResend(apiKey, {
+          from: fromStr, to: contact.email, replyTo: replyToStr ?? undefined,
+          subject, html: htmlBody, text: plainBody,
+          attachments: template.attachments || [],
+        });
+      } else {
+        // SMTP path — no email ID available
+        await transporter.sendMail({
+          from: fromStr, to: contact.email, replyTo: replyToStr, subject,
+          html: htmlBody, text: plainBody,
+          headers: { "X-Mailer": "YESPFLOW", "Precedence": "bulk" },
+          attachments: (template.attachments || []).map((a: any) => ({ filename: a.name, href: a.url })),
+        });
+      }
 
       await supabase.from("EmailActivity").insert([{
         contactId: state.contactId, campaignId: campaign.id, userId,
         type: `Step ${currentStepNumber + 1}: ${template.name}`,
+        resendEmailId,
+        resendStatus: resendEmailId ? "sent" : null,
       }]);
 
       if (nextStep) {
@@ -296,20 +376,30 @@ export async function runSendEngine(options: {
         }).eq("id", state.id);
       }
 
+      // Webhook-out notification
+      if (settings.webhookOutUrl) {
+        fetch(settings.webhookOutUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "email.sent",
+            contactEmail: contact.email,
+            contactName: contact.name || contact.email,
+            campaignName: campaign.name,
+            step: currentStepNumber + 1,
+            timestamp: sentAt,
+          }),
+        }).catch(() => {});
+      }
+
       campaignDailyCounts[campaign.id]++;
       processedCount++;
 
-      const entry: RunLogEntry = {
+      logLines.push({
         email: contact.email, contact: contact.name || contact.email,
         campaign: campaign.name, step: currentStepNumber + 1,
         status: "sent", timestamp: sentAt,
-      };
-      logLines.push(entry);
-
-      // Update run log progress
-      if (runLogId) {
-        await supabase.from("CampaignRunLog").update({ totalSent: processedCount }).eq("id", runLogId);
-      }
+      });
 
       emit({ type: "sent", count: processedCount, email: contact.email, contact: contact.name || contact.email, step: currentStepNumber + 1 });
     } catch (err: any) {
@@ -322,10 +412,6 @@ export async function runSendEngine(options: {
         campaign: campaign.name, step: currentStepNumber + 1,
         status: "failed", timestamp: new Date().toISOString(), note: msg,
       });
-
-      if (runLogId) {
-        await supabase.from("CampaignRunLog").update({ totalFailed: errors.length }).eq("id", runLogId);
-      }
 
       emit({ type: "failed", email: contact.email, contact: contact.name || contact.email, reason: msg });
     }
@@ -341,7 +427,7 @@ export async function runSendEngine(options: {
     }).eq("id", runLogId);
   }
 
-  emit({ type: "done", sent: processedCount, skipped, failed: errors.length, errors, campaignName: runCampaignName });
+  emit({ type: "done", sent: processedCount, skipped, failed: errors.length, errors, campaignName: runCampaignName, runLogId });
 
   // ── Generate & email PDF report ───────────────────────────────────────────
   if (settings.reportingEmail && logLines.length > 0) {
@@ -353,26 +439,64 @@ export async function runSendEngine(options: {
         entries: logLines,
       };
       const pdfBuf = await generateRunReportPDF(summary);
-      const reportTransporter = buildTransporter(null, settings);
-      const fromStr2 = buildFromStr(null, settings) || settings.reportingEmail;
-      if (fromStr2) {
-        await reportTransporter.sendMail({
-          from: fromStr2, to: settings.reportingEmail,
-          subject: `YESP Flow Report: ${summary.campaignName} — ${processedCount} sent`,
-          text: `Campaign run complete.\n\nSent: ${processedCount}\nSkipped: ${skipped}\nFailed: ${errors.length}\n\nSee attached PDF for full log.`,
+      const reportApiKey = process.env.RESEND_API_KEY;
+
+      if (reportApiKey) {
+        // Always send reports from flow@yespstudio.com via Resend
+        const reportClient = new Resend(reportApiKey);
+        const { error: reportError } = await reportClient.emails.send({
+          from: "Yesp Flow <flow@yespstudio.com>",
+          to: [settings.reportingEmail],
+          subject: `Yesp Flow Report: ${summary.campaignName} - ${processedCount} sent`,
+          text: `Campaign run complete.\n\nSent: ${processedCount}\nSkipped: ${skipped}\nFailed: ${errors.length}\n\nSee attached PDF for the full activity log.`,
+          html: `<div style="font-family:sans-serif;color:#1e293b;font-size:14px;line-height:1.6">
+<h2 style="color:#1e40af;margin:0 0 8px">Yesp Flow - Campaign Run Report</h2>
+<p style="margin:0 0 16px;color:#64748b">${summary.campaignName}</p>
+<table style="border-collapse:collapse;margin-bottom:16px">
+  <tr><td style="padding:6px 16px 6px 0;color:#64748b">Sent</td><td style="font-weight:700;color:#16a34a">${processedCount}</td></tr>
+  <tr><td style="padding:6px 16px 6px 0;color:#64748b">Skipped</td><td style="font-weight:700;color:#d97706">${skipped}</td></tr>
+  <tr><td style="padding:6px 16px 6px 0;color:#64748b">Failed</td><td style="font-weight:700;color:#dc2626">${errors.length}</td></tr>
+</table>
+<p style="color:#64748b;font-size:12px">See the attached PDF for the full per-contact activity log.</p>
+</div>`,
           attachments: [{
             filename: `yesp-flow-report-${Date.now()}.pdf`,
-            content: pdfBuf, contentType: "application/pdf",
+            content: pdfBuf,
           }],
         });
-        if (runLogId) {
+        if (!reportError && runLogId) {
           await supabase.from("CampaignRunLog").update({ reportSent: true }).eq("id", runLogId);
+        }
+        if (reportError) console.error("[send-engine] Report email failed:", (reportError as any).message);
+      } else {
+        // Fallback: send via nodemailer using the configured SMTP/Resend transporter
+        const reportTransporter = buildTransporter(null, settings);
+        const fromStr2 = buildFromStr(null, settings) || settings.reportingEmail;
+        if (fromStr2) {
+          await reportTransporter.sendMail({
+            from: fromStr2, to: settings.reportingEmail,
+            subject: `Yesp Flow Report: ${summary.campaignName} - ${processedCount} sent`,
+            text: `Campaign run complete.\n\nSent: ${processedCount}\nSkipped: ${skipped}\nFailed: ${errors.length}\n\nSee attached PDF for full log.`,
+            attachments: [{
+              filename: `yesp-flow-report-${Date.now()}.pdf`,
+              content: pdfBuf, contentType: "application/pdf",
+            }],
+          });
+          if (runLogId) {
+            await supabase.from("CampaignRunLog").update({ reportSent: true }).eq("id", runLogId);
+          }
         }
       }
     } catch (pdfErr: any) {
       console.error("[send-engine] PDF report failed:", pdfErr.message);
     }
   }
+
+  // Refresh all data-dependent pages so the UI reflects the run immediately
+  revalidatePath("/");
+  revalidatePath("/contacts");
+  revalidatePath("/campaigns");
+  revalidatePath("/queue");
 
   return { success: true, processedCount, skipped, errors };
 }

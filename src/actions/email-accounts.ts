@@ -18,6 +18,12 @@ export type EmailAccountData = {
   resendApiKey?: string;
   dailyLimit?: number;
   isActive?: boolean;
+  // TLS mode (SMTP only): 'opportunistic' | 'enforced'
+  tlsMode?: string;
+  // IMAP reply-detection fields (SMTP accounts only)
+  imapHost?: string;
+  imapPort?: number;
+  imapEnabled?: boolean;
 };
 
 export async function getEmailAccounts() {
@@ -33,6 +39,11 @@ export async function getEmailAccounts() {
 
 export async function createEmailAccount(data: EmailAccountData) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to add email accounts." };
+
+  if (data.provider === "resend" && !data.resendApiKey?.trim()) {
+    return { success: false, error: "A Resend API key is required for Resend accounts." };
+  }
+
   const userId = await getCurrentUserId();
   const { data: account, error } = await supabase
     .from("EmailAccount")
@@ -46,9 +57,13 @@ export async function createEmailAccount(data: EmailAccountData) {
       smtpPort: data.smtpPort || 465,
       smtpUser: data.smtpUser || "resend",
       smtpPass: data.smtpPass || null,
-      resendApiKey: data.resendApiKey || null,
+      resendApiKey: data.resendApiKey?.trim() || null,
       dailyLimit: data.dailyLimit || 50,
       isActive: data.isActive !== undefined ? data.isActive : true,
+      tlsMode: data.tlsMode || "opportunistic",
+      imapHost: data.imapHost?.trim() || null,
+      imapPort: data.imapPort || 993,
+      imapEnabled: data.imapEnabled ?? false,
     }])
     .select()
     .single();
@@ -60,8 +75,14 @@ export async function createEmailAccount(data: EmailAccountData) {
 
 export async function updateEmailAccount(id: string, data: Partial<EmailAccountData>) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update email accounts." };
+
+  if (data.provider === "resend" && data.resendApiKey !== undefined && !data.resendApiKey?.trim()) {
+    return { success: false, error: "A Resend API key is required for Resend accounts." };
+  }
+
   const userId = await getCurrentUserId();
-  const { error } = await supabase.from("EmailAccount").update(data).eq("id", id).eq("userId", userId);
+  const payload = { ...data, resendApiKey: data.resendApiKey?.trim() || undefined };
+  const { error } = await supabase.from("EmailAccount").update(payload).eq("id", id).eq("userId", userId);
   if (error) { dbLog("updateEmailAccount", error); return { success: false, error: error.message }; }
   revalidatePath("/email-accounts");
   return { success: true };
@@ -92,7 +113,10 @@ export async function testEmailAccount(id: string) {
     if (account.provider === "resend" && account.resendApiKey) {
       transportConfig = { host: "smtp.resend.com", port: 465, secure: true, auth: { user: "resend", pass: account.resendApiKey } } as nodemailer.TransportOptions;
     } else {
-      transportConfig = { host: account.smtpHost || "smtp.resend.com", port: account.smtpPort || 465, secure: account.smtpPort === 465, auth: { user: account.smtpUser || "resend", pass: account.smtpPass || "" } } as nodemailer.TransportOptions;
+      const port = account.smtpPort || 465;
+      const secure = port === 465;
+      const requireTLS = !secure && account.tlsMode === "enforced";
+      transportConfig = { host: account.smtpHost || "smtp.resend.com", port, secure, requireTLS: requireTLS || undefined, auth: { user: account.smtpUser || "resend", pass: account.smtpPass || "" } } as nodemailer.TransportOptions;
     }
     const transporter = nodemailer.createTransport(transportConfig);
     await transporter.verify();

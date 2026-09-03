@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently \"next dev\" \"node worker.js\"",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "concurrently \"next start -p ${PORT:-3000}\" \"node worker.js\"",
     "lint": "eslint"
   },
   "dependencies": {
@@ -15,6 +15,7 @@
     "clsx": "^2.1.1",
     "concurrently": "^9.2.4",
     "dotenv": "^17.4.2",
+    "imapflow": "^1.7.8",
     "lucide-react": "^1.33.0",
     "next": "16.3.1",
     "node-cron": "^4.6.0",
@@ -37,6 +38,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

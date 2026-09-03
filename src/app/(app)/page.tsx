@@ -2,6 +2,7 @@ import { Mail, Clock, CheckCircle2, AlertCircle, Zap, ChevronRight, Activity } f
 import { getContacts } from "@/actions/contacts";
 import { getEmailActivity } from "@/actions/activity";
 import { TriggerFollowUpsButton } from "@/components/TriggerFollowUpsButton";
+import type { ContactRow, ContactCampaignState } from "@/types/db";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -15,24 +16,51 @@ export default async function DashboardPage() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Aggregate across ALL campaign states for each contact, not just the first one.
   const metrics = {
-    newEmails: contacts.filter(c => c.states?.[0]?.status === "New").length,
-    followUps: contacts.filter(c => {
-      const s = c.states?.[0];
-      return s?.status === "Waiting" && s.nextActionDate && new Date(s.nextActionDate) <= today;
-    }).length,
-    replies: contacts.filter(c => c.states?.[0]?.status === "Replied").length,
-    bounced: contacts.filter(c => c.states?.[0]?.status === "Bounced").length,
+    newEmails: contacts.filter((c) =>
+      c.states.some((s) => s.status === "New")
+    ).length,
+    pendingToday: contacts.filter((c) =>
+      c.states.some(
+        (s) =>
+          (s.status === "Waiting" || s.status === "Contacted") &&
+          s.nextActionDate &&
+          new Date(s.nextActionDate) <= today
+      )
+    ).length,
+    replies: contacts.filter((c) =>
+      c.states.some((s) => s.status === "Replied")
+    ).length,
+    bounced: contacts.filter((c) =>
+      c.states.some((s) => s.status === "Bounced")
+    ).length,
     total: contacts.length,
   };
 
-  const todaysActions = contacts.filter(c => {
-    const s = c.states?.[0];
-    if (!s) return false;
-    if (s.status === "New") return true;
-    if (s.status === "Waiting" && s.nextActionDate && new Date(s.nextActionDate) <= today) return true;
-    return false;
-  }).slice(0, 30);
+  // Today's actions: contacts that have at least one state due today.
+  const todaysActions = contacts
+    .filter((c) =>
+      c.states.some(
+        (s) =>
+          s.status === "New" ||
+          ((s.status === "Waiting" || s.status === "Contacted") &&
+            s.nextActionDate &&
+            new Date(s.nextActionDate) <= today)
+      )
+    )
+    .slice(0, 30)
+    .map((c) => {
+      // Pick the most-actionable state to display.
+      const dueState: ContactCampaignState | undefined =
+        c.states.find(
+          (s) =>
+            (s.status === "Waiting" || s.status === "Contacted") &&
+            s.nextActionDate &&
+            new Date(s.nextActionDate) <= today
+        ) ?? c.states.find((s) => s.status === "New");
+      return { ...c, _displayState: dueState };
+    });
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
@@ -54,11 +82,11 @@ export default async function DashboardPage() {
             sub="Ready to send"
           />
           <MetricCard
-            label="Follow-ups Due"
-            value={metrics.followUps}
+            label="Pending Today"
+            value={metrics.pendingToday}
             color="amber"
             icon={<Clock className="w-4 h-4" />}
-            sub="Action needed"
+            sub="Due today"
           />
           <MetricCard
             label="Replies"
@@ -104,7 +132,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-100">
               {todaysActions.map((contact) => {
-                const state = contact.states?.[0];
+                const state = contact._displayState as ContactCampaignState | undefined;
                 const isNew = state?.status === "New";
                 const initials = (contact.name || contact.email).substring(0, 2).toUpperCase();
 
@@ -145,7 +173,7 @@ export default async function DashboardPage() {
         <div className="bg-blue-600 rounded-2xl p-4 text-white">
           <h3 className="text-sm font-semibold mb-0.5">Run Email Pipeline</h3>
           <p className="text-xs text-blue-200 mb-3">
-            {metrics.newEmails + metrics.followUps} actions queued and ready.
+            {metrics.newEmails + metrics.pendingToday} actions queued and ready.
           </p>
           <TriggerFollowUpsButton label="Send Now" variant="white" />
         </div>
@@ -155,7 +183,7 @@ export default async function DashboardPage() {
           <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Overview</h3>
           <div className="space-y-2">
             <StatRow label="Total contacts" value={metrics.total} />
-            <StatRow label="Active sequences" value={metrics.newEmails + metrics.followUps} />
+            <StatRow label="Active sequences" value={metrics.newEmails + metrics.pendingToday} />
             <StatRow label="Reply rate" value={metrics.total > 0 ? `${Math.round((metrics.replies / metrics.total) * 100)}%` : "—"} />
             <StatRow label="Bounce rate" value={metrics.total > 0 ? `${Math.round((metrics.bounced / metrics.total) * 100)}%` : "—"} />
           </div>

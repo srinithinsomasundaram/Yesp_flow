@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Trash2, MessageSquare, Loader2, CheckCircle2, X, Reply } from "lucide-react";
+import { Users, Trash2, MessageSquare, Loader2, CheckCircle2, X, Reply, Send } from "lucide-react";
 import { removeContactFromCampaign } from "@/actions/campaigns";
 import { markAsReplied } from "@/actions/contacts";
+import { sendReplyEmail } from "@/actions/run-logs";
 
 const STATUS_STYLE: Record<string, string> = {
   New:       "bg-blue-50 text-blue-700 border-blue-200",
@@ -16,18 +17,51 @@ const STATUS_STYLE: Record<string, string> = {
 
 function ReplyModal({
   state,
+  campaign,
   onClose,
   onDone,
 }: {
   state: any;
+  campaign: any;
   onClose: () => void;
   onDone: (stateId: string, note: string) => void;
 }) {
   const [note, setNote] = useState(state.replyNote || "");
+  const [replySubject, setReplySubject] = useState(`Re: ${campaign?.name || "Your email"}`);
+  const [replyBody, setReplyBody] = useState("");
   const [saving, setSaving] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
-  const handleSave = async () => {
+  const handleMarkOnly = async () => {
     setSaving(true);
+    const res = await markAsReplied(state.contactId, state.campaignId, note);
+    setSaving(false);
+    if (res.success) onDone(state.id, note);
+  };
+
+  const handleSendAndMark = async () => {
+    if (!replyBody.trim()) {
+      setSendError("Reply body is required to send an email.");
+      return;
+    }
+    setSendError(null);
+    setSaving(true);
+
+    const sendResult = await sendReplyEmail({
+      contactEmail: state.contact?.email,
+      contactName: state.contact?.name ?? null,
+      contactId: state.contactId,
+      campaignId: state.campaignId,
+      originalSubject: replySubject,
+      replyBody,
+    });
+
+    if (!sendResult.success) {
+      setSaving(false);
+      setSendError(sendResult.error ?? "Failed to send email.");
+      return;
+    }
+
     const res = await markAsReplied(state.contactId, state.campaignId, note);
     setSaving(false);
     if (res.success) onDone(state.id, note);
@@ -35,48 +69,90 @@ function ReplyModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Reply className="w-4 h-4 text-emerald-600" />
-            <p className="text-sm font-bold text-slate-900">Mark as Replied</p>
+            <p className="text-sm font-bold text-slate-900">Reply to Contact</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        <p className="text-xs text-slate-500">
+          Replying to <strong>{state.contact?.name || state.contact?.email}</strong>. Sending will stop
+          further follow-ups and log the reply.
+        </p>
+
+        {/* Reply subject */}
         <div>
-          <p className="text-xs text-slate-500 mb-3">
-            Marking <strong>{state.contact?.name || state.contact?.email}</strong> as replied will stop
-            further follow-ups and record the reply in their timeline.
-          </p>
           <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-            Reply note <span className="text-slate-400 font-normal">(optional)</span>
+            Reply Subject
+          </label>
+          <input
+            value={replySubject}
+            onChange={(e) => setReplySubject(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none text-slate-900"
+          />
+        </div>
+
+        {/* Reply body */}
+        <div>
+          <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+            Reply Body <span className="text-slate-400 font-normal">(required to send email)</span>
           </label>
           <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="e.g. Interested, asked for pricing…"
-            rows={3}
+            value={replyBody}
+            onChange={(e) => setReplyBody(e.target.value)}
+            placeholder={"Hi {{name}},\n\nThank you for your reply…"}
+            rows={5}
             className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none text-slate-900 placeholder-slate-400"
           />
         </div>
 
+        {/* Internal note */}
+        <div>
+          <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+            Internal note <span className="text-slate-400 font-normal">(optional)</span>
+          </label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. Interested, asked for pricing…"
+            rows={2}
+            className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none text-slate-900 placeholder-slate-400"
+          />
+        </div>
+
+        {sendError && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-xl">
+            {sendError}
+          </p>
+        )}
+
         <div className="flex gap-2 pt-1">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors"
+            className="px-4 py-2.5 text-sm font-semibold border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={handleMarkOnly}
+            disabled={saving}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            Mark Replied Only
+          </button>
+          <button
+            onClick={handleSendAndMark}
             disabled={saving}
             className="flex-1 px-4 py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            Confirm Reply
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Send &amp; Mark Replied
           </button>
         </div>
       </div>
@@ -171,6 +247,7 @@ export function CampaignContactsTable({ campaign }: { campaign: any }) {
       {replyTarget && (
         <ReplyModal
           state={replyTarget}
+          campaign={campaign}
           onClose={() => setReplyTarget(null)}
           onDone={handleReplied}
         />

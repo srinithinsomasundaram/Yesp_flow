@@ -103,17 +103,9 @@ export async function inviteTeamMember(teamId: string, email: string, role: Team
   const inviterEmail = user?.email ?? "A teammate";
   const teamName     = team?.name ?? "the team";
 
-  const { data: ownerSettings } = await supabase
-    .from("Settings").select("resendKey").eq("id", workspaceOwnerId).maybeSingle();
-  const apiKey = ownerSettings?.resendKey?.trim() ?? "";
-
-  if (apiKey) {
-    sendTeamInviteEmail({ to: email.toLowerCase().trim(), teamName, inviterEmail, role, apiKey }).catch((e) =>
-      console.error("[teams] invite email failed:", e.message)
-    );
-  } else {
-    console.warn("[teams] invite email skipped — no Resend API key in workspace settings");
-  }
+  sendTeamInviteEmail({ to: email.toLowerCase().trim(), teamName, inviterEmail, role }).catch((e) =>
+    console.error("[teams] invite email failed:", e.message)
+  );
 
   revalidatePath("/settings");
   return { success: true };

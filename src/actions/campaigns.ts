@@ -97,18 +97,6 @@ export async function createCampaign(data: {
     if (stepsError) dbLog("createCampaignSteps", stepsError);
   }
 
-  // Auto-assign this user's existing contacts
-  const { data: contacts } = await supabase
-    .from("Contact")
-    .select("id")
-    .eq("userId", userId);
-
-  if (contacts?.length) {
-    await supabase.from("ContactCampaignState").insert(
-      contacts.map((c) => ({ contactId: c.id, campaignId: campaign.id, currentStep: 0, status: "New" }))
-    );
-  }
-
   revalidatePath("/campaigns");
   return { success: true, campaign };
 }
@@ -125,7 +113,7 @@ export async function updateCampaign(id: string, updates: {
   name?: string; dailyLimit?: number; pacingSeconds?: number;
   cronTime?: string; cronEnabled?: boolean; timezone?: string;
   sendingDays?: string; startTime?: string; endTime?: string;
-  emailAccountId?: string; status?: string;
+  emailAccountId?: string | null; status?: string;
 }) {
   if (!await hasPermission("member")) return { success: false, error: "Member access required to update campaigns." };
   const userId = await getCurrentUserId();
@@ -146,8 +134,18 @@ export async function removeContactFromCampaign(contactId: string, campaignId: s
   return { success: !error };
 }
 
-export async function addCampaignStep(campaignId: string, templateId: string, delayDays: number, stepNumber: number, delayUnit?: string) {
+export async function addCampaignStep(campaignId: string, templateId: string, delayDays: number, _stepNumberHint: number, delayUnit?: string) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to add campaign steps." };
+
+  // Compute the correct step number server-side so client-passed hints don't cause
+  // numbering gaps after deletions.
+  const { data: existing } = await supabase
+    .from("CampaignStep")
+    .select("stepNumber")
+    .eq("campaignId", campaignId);
+  const maxStep = existing?.length ? Math.max(...existing.map((s: any) => s.stepNumber)) : -1;
+  const stepNumber = maxStep + 1;
+
   const { error } = await supabase.from("CampaignStep").insert([
     { campaignId, templateId, delayDays, stepNumber, delayUnit: delayUnit || "days" },
   ]);
@@ -168,6 +166,43 @@ export async function updateCampaignStep(stepId: string, templateId: string, del
 
 export async function removeCampaignStep(stepId: string, campaignId: string) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to remove campaign steps." };
+
+  // Find the step being deleted so we can rescue contacts stuck at it.
+  const { data: step } = await supabase
+    .from("CampaignStep")
+    .select("stepNumber")
+    .eq("id", stepId)
+    .maybeSingle();
+
+  if (step) {
+    // Find the nearest following step to forward contacts to.
+    const { data: nextStep } = await supabase
+      .from("CampaignStep")
+      .select("stepNumber")
+      .eq("campaignId", campaignId)
+      .gt("stepNumber", step.stepNumber)
+      .order("stepNumber", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (nextStep) {
+      await supabase
+        .from("ContactCampaignState")
+        .update({ currentStep: nextStep.stepNumber })
+        .eq("campaignId", campaignId)
+        .eq("currentStep", step.stepNumber)
+        .in("status", ["New", "Waiting", "Contacted"]);
+    } else {
+      // No later step — mark contacts at this step as completed.
+      await supabase
+        .from("ContactCampaignState")
+        .update({ status: "Completed", nextActionDate: null })
+        .eq("campaignId", campaignId)
+        .eq("currentStep", step.stepNumber)
+        .in("status", ["New", "Waiting", "Contacted"]);
+    }
+  }
+
   const { error } = await supabase.from("CampaignStep").delete().eq("id", stepId);
   if (error) dbLog("removeCampaignStep", error);
   revalidatePath(`/campaigns/${campaignId}`);

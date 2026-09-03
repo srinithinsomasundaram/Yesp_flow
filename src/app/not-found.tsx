@@ -10,7 +10,7 @@ export default function NotFound() {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <span className="text-xl font-bold text-slate-900">
-            YESP<span className="text-blue-600">FLOW</span>
+            Yesp<span className="text-blue-600">Flow</span>
           </span>
         </div>
         <h1 className="text-6xl font-black text-slate-200 mb-2">404</h1>

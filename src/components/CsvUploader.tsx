@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { Upload, Loader2, X, FileSpreadsheet, Sparkles, CheckCircle2 } from "lucide-react";
 import { importContacts } from "@/actions/contacts";
 
 export function CsvUploader({ campaigns }: { campaigns: any[] }) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -53,17 +55,20 @@ export function CsvUploader({ campaigns }: { campaigns: any[] }) {
 
   const handleImport = async () => {
     setIsProcessing(true);
-    let campId = undefined;
-    if (selectedAction === "existing_campaign" && selectedCampaignId) {
-      campId = selectedCampaignId;
-    }
+    const campId = selectedAction === "existing_campaign" && selectedCampaignId
+      ? selectedCampaignId
+      : undefined;
 
-    const res = await importContacts(parsedContacts, campId);
-    
-    if (res.success) {
-      alert(`Successfully imported ${res.count} contacts!`);
-    } else {
-      alert("Failed to import contacts.");
+    try {
+      const res = await importContacts(parsedContacts, campId);
+      if (res.success) {
+        alert(`Successfully imported ${res.count} of ${parsedContacts.length} contacts!`);
+        router.refresh();
+      } else {
+        alert(`Import failed: ${(res as any).error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      alert(`Import error: ${err?.message || "Unknown error"}`);
     }
 
     setIsProcessing(false);

@@ -81,10 +81,11 @@ export function CampaignSettings({
       sendingDays: sendingDays.join(","),
       startTime,
       endTime,
-      emailAccountId: emailAccountId || undefined,
+      emailAccountId: emailAccountId || null,
     });
     setIsSaving(false);
     setIsEditing(false);
+    router.refresh();
   };
 
   const inputClass =

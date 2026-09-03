@@ -1,9 +1,11 @@
-import { Users } from "lucide-react";
-import { getContacts } from "@/actions/contacts";
+import { Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { getContactsPage, getContactTabCounts } from "@/actions/contacts";
+import { CONTACTS_PAGE_SIZE } from "@/lib/pagination";
 import { getCampaigns } from "@/actions/campaigns";
 import { CsvUploader } from "@/components/CsvUploader";
 import { ManualContactForm } from "@/components/ManualContactForm";
 import { ContactsTable } from "@/components/ContactsTable";
+import type { ContactTabCounts } from "@/types/db";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -11,66 +13,36 @@ export const dynamic = "force-dynamic";
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; page?: string }>;
 }) {
-  const [allContacts, campaigns] = await Promise.all([getContacts(), getCampaigns()]);
-  const { filter = "all" } = await searchParams;
+  const { filter = "all", page: pageStr = "0" } = await searchParams;
+  const page = Math.max(0, parseInt(pageStr, 10) || 0);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const [counts, contacts, campaigns] = await Promise.all([
+    getContactTabCounts(),
+    getContactsPage(filter, page),
+    getCampaigns(),
+  ]);
 
-  const contacts = allContacts.filter((c) => {
-    if (filter === "all") return true;
-    const s = c.states?.[0];
-    if (!s) return false;
-    const nextDate = s.nextActionDate ? new Date(s.nextActionDate) : null;
-    if (filter === "new") return s.status === "New";
-    if (filter === "today")
-      return (s.status === "Contacted" || s.status === "Waiting") && nextDate && nextDate <= today;
-    if (filter === "replied") return s.status === "Replied";
-    if (filter === "completed") return s.status === "Completed";
-    if (filter === "bounced") return s.status === "Bounced";
-    return true;
-  });
-
-  const tabs = [
-    { id: "all", label: "All", count: allContacts.length },
-    {
-      id: "new",
-      label: "Unsent",
-      count: allContacts.filter((c) => c.states?.[0]?.status === "New").length,
-    },
-    {
-      id: "today",
-      label: "Pending Today",
-      count: allContacts.filter((c) => {
-        const s = c.states?.[0];
-        return (
-          (s?.status === "Waiting" && s?.nextActionDate && new Date(s.nextActionDate) <= today) ||
-          s?.status === "New"
-        );
-      }).length,
-    },
-    {
-      id: "replied",
-      label: "Replied",
-      count: allContacts.filter((c) => c.states?.[0]?.status === "Replied").length,
-    },
-    {
-      id: "completed",
-      label: "Completed",
-      count: allContacts.filter((c) => c.states?.[0]?.status === "Completed").length,
-    },
-    {
-      id: "bounced",
-      label: "Bounced",
-      count: allContacts.filter((c) => c.states?.[0]?.status === "Bounced").length,
-    },
+  const tabs: Array<{ id: string; label: string; count: number }> = [
+    { id: "all",       label: "All",          count: counts.all },
+    { id: "new",       label: "Unsent",       count: counts.unsent },
+    { id: "today",     label: "Pending Today", count: counts.today },
+    { id: "replied",   label: "Replied",      count: counts.replied },
+    { id: "completed", label: "Completed",    count: counts.completed },
+    { id: "bounced",   label: "Bounced",      count: counts.bounced },
   ];
+
+  const activeCount = tabs.find((t) => t.id === filter)?.count ?? counts.all;
+  const totalPages  = Math.ceil(activeCount / CONTACTS_PAGE_SIZE);
+  const hasPrev     = page > 0;
+  const hasNext     = page < totalPages - 1;
+  const rangeStart  = activeCount === 0 ? 0 : page * CONTACTS_PAGE_SIZE + 1;
+  const rangeEnd    = Math.min(page * CONTACTS_PAGE_SIZE + contacts.length, activeCount);
 
   return (
     <div className="space-y-6">
-      {/* Header — same pattern as dashboard */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -81,7 +53,7 @@ export default async function ContactsPage({
           </div>
           <h1 className="text-xl font-bold text-slate-900">Lead & Contact Database</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {allContacts.length} total contacts · manage prospects, campaigns, and statuses.
+            {counts.all} total contacts · manage prospects, campaigns, and statuses.
           </p>
         </div>
         <div className="flex items-center gap-2 sm:shrink-0">
@@ -118,6 +90,44 @@ export default async function ContactsPage({
 
       {/* Table */}
       <ContactsTable contacts={contacts} campaigns={campaigns} />
+
+      {/* Pagination controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <span className="text-xs text-slate-500">
+            Showing {rangeStart}–{rangeEnd} of {activeCount} contacts
+          </span>
+          <div className="flex items-center gap-2">
+            {hasPrev ? (
+              <Link
+                href={`/contacts?filter=${filter}&page=${page - 1}`}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </Link>
+            ) : (
+              <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-300 bg-white border border-slate-100 rounded-lg cursor-not-allowed">
+                <ChevronLeft className="w-3.5 h-3.5" /> Previous
+              </span>
+            )}
+            <span className="text-xs text-slate-500">
+              Page {page + 1} of {totalPages}
+            </span>
+            {hasNext ? (
+              <Link
+                href={`/contacts?filter=${filter}&page=${page + 1}`}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            ) : (
+              <span className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-300 bg-white border border-slate-100 rounded-lg cursor-not-allowed">
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
