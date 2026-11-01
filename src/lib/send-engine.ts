@@ -318,12 +318,15 @@ export async function runSendEngine(options: {
     // Compose
     const template = currentStep.template;
     const subject  = applyMergeTags(template.subject || "", contact);
-    let   body     = applyMergeTags(template.body    || "", contact);
-    const isHtml   = /<[a-z][\s\S]*>/i.test(body);
+    const rawBody  = applyMergeTags(template.body    || "", contact);
+    const hasHtmlInBody = /<[a-z][\s\S]*>/i.test(rawBody);
+    const formattedBody = hasHtmlInBody ? rawBody : rawBody.replace(/\n/g, "<br />");
+    let fullBody = formattedBody;
+
     if (template.signature) {
       const sig = applyMergeTags(template.signature, contact);
-      const formattedSig = isHtml && !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
-      body += isHtml ? `<br><br>${formattedSig}` : `\n\n${formattedSig}`;
+      const formattedSig = !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
+      fullBody += `<br><br>${formattedSig}`;
     }
 
     // Unsubscribe footer — legally required for cold outreach
@@ -335,8 +338,8 @@ export async function runSendEngine(options: {
     const unsubHtml = `<div style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af;font-family:sans-serif;">You received this email because you are in our outreach list. <a href="${unsubUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a></div>`;
     const unsubText = `\n\n---\nTo unsubscribe from further emails, visit: ${unsubUrl}`;
 
-    const htmlBody  = (isHtml ? body : body.replace(/\n/g, "<br />")) + unsubHtml;
-    const plainBody = (isHtml ? htmlToText(body) : body) + unsubText;
+    const htmlBody  = fullBody + unsubHtml;
+    const plainBody = htmlToText(fullBody) + unsubText;
 
     const sentAt = new Date().toISOString();
 

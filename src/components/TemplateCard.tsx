@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Edit2, Trash2, X, Save, Loader2, FileText, Code, Type, Copy, Paperclip, Eye, ShieldAlert, FileSignature } from "lucide-react";
 import { updateTemplate, deleteTemplate, duplicateTemplate } from "@/actions/templates";
 import { getSpamScore } from "@/lib/spam-score";
+import { SignatureEditor } from "@/components/SignatureEditor";
 
 const MERGE_TAGS = ["{{name}}", "{{firstName}}", "{{company}}", "{{email}}", "{{jobTitle}}", "{{linkedinUrl}}"];
 const HTML_SNIPPETS = [
@@ -375,82 +376,15 @@ export function TemplateCard({ template, files = [] }: { template: any; files?: 
                 </div>
               )}
 
-              {/* Email Signature Option */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 transition-all">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200">
-                      <FileSignature className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <label htmlFor={`edit-toggle-sig-${template.id}`} className="text-xs font-semibold text-slate-800 cursor-pointer">
-                          Email Signature
-                        </label>
-                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                          Optional
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Automatically appended to the end of outgoing emails
-                      </p>
-                    </div>
-                  </div>
-
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      id={`edit-toggle-sig-${template.id}`}
-                      type="checkbox"
-                      checked={includeSignature}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setIncludeSignature(checked);
-                        if (checked && !signature) {
-                          setSignature("Best regards,\n{{name}}\nYour Company | example.com");
-                        }
-                      }}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
-                  </label>
-                </div>
-
-                {includeSignature && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-600 font-medium">Signature Text or HTML</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSignature("Best regards,\n{{name}}\nYour Company | example.com")}
-                          className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline font-medium"
-                        >
-                          Reset Example
-                        </button>
-                        {signature && (
-                          <button
-                            type="button"
-                            onClick={() => setSignature("")}
-                            className="text-[11px] text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <textarea
-                      value={signature}
-                      onChange={(e) => setSignature(e.target.value)}
-                      rows={3}
-                      placeholder={"Best regards,\n{{name}}\nYour Company | example.com"}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none bg-white font-sans leading-relaxed"
-                    />
-                    <p className="text-[11px] text-slate-400">
-                      Tip: Merge tags like <span className="font-mono text-blue-600">{"{{name}}"}</span> and <span className="font-mono text-blue-600">{"{{company}}"}</span> are supported.
-                    </p>
-                  </div>
-                )}
-              </div>
+              {/* Email Signature Option with Image & Text support */}
+              <SignatureEditor
+                value={signature}
+                onChange={setSignature}
+                enabled={includeSignature}
+                onToggleEnabled={setIncludeSignature}
+                files={files}
+                idPrefix={`template-edit-${template.id}`}
+              />
 
               {/* Attachments */}
               <div>

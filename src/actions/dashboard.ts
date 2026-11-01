@@ -106,15 +106,19 @@ export async function sendTestEmail(
   };
 
   const subject  = `[TEST] ${applyMergeTags(template.subject || "", dummyContact)}`;
-  let   body     = applyMergeTags(template.body || "", dummyContact);
-  const isHtml   = /<[a-z][\s\S]*>/i.test(body);
+  const rawBody  = applyMergeTags(template.body || "", dummyContact);
+  const hasHtmlInBody = /<[a-z][\s\S]*>/i.test(rawBody);
+  const formattedBody = hasHtmlInBody ? rawBody : rawBody.replace(/\n/g, "<br />");
+  let fullBody = formattedBody;
+
   if (template.signature) {
     const sig = applyMergeTags(template.signature, dummyContact);
-    const formattedSig = isHtml && !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
-    body += isHtml ? `<br><br>${formattedSig}` : `\n\n${formattedSig}`;
+    const formattedSig = !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
+    fullBody += `<br><br>${formattedSig}`;
   }
-  const htmlBody  = isHtml ? body : body.replace(/\n/g, "<br />");
-  const plainBody = isHtml ? htmlToText(body) : body;
+
+  const htmlBody  = fullBody;
+  const plainBody = htmlToText(fullBody);
 
   try {
     await buildTransporter(account, settings).sendMail({
