@@ -89,7 +89,7 @@ export function CampaignFlowEditor({
   });
 
   // Preview modal
-  const [previewTemplate, setPreviewTemplate] = useState<{ name: string; subject: string; body: string } | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<{ name: string; subject: string; body: string; signature?: string | null } | null>(null);
 
   const openEdit = (step: CampaignStep) => {
     setEditingStepId(step.id);
@@ -207,6 +207,7 @@ export function CampaignFlowEditor({
                               name: tpl.name,
                               subject: tpl.subject || "",
                               body: tpl.body || "",
+                              signature: tpl.signature || null,
                             })
                           }
                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"

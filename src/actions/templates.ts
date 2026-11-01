@@ -18,7 +18,7 @@ export async function getTemplates() {
 
 export async function createTemplate(data: {
   name: string; subject: string; body: string;
-  category?: string; replyTo?: string;
+  category?: string; replyTo?: string; signature?: string | null;
   attachments?: { id: string; name: string; url: string }[];
 }) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to create templates." };
@@ -30,6 +30,7 @@ export async function createTemplate(data: {
       name: data.name,
       subject: data.subject,
       body: data.body,
+      signature: data.signature ? data.signature.trim() : null,
       category: data.category || "Custom",
       replyTo: data.replyTo || null,
       attachments: data.attachments ?? [],
@@ -57,21 +58,25 @@ export async function deleteTemplate(id: string) {
 
 export async function updateTemplate(id: string, data: {
   name: string; subject: string; body: string;
-  category?: string; replyTo?: string;
+  category?: string; replyTo?: string; signature?: string | null;
   attachments?: { id: string; name: string; url: string }[];
 }) {
   if (!await hasPermission("admin")) return { success: false, error: "Admin access required to update templates." };
   const userId = await getCurrentUserId();
+  const updatePayload: Record<string, unknown> = {
+    name: data.name,
+    subject: data.subject,
+    body: data.body,
+    category: data.category || "Custom",
+    replyTo: data.replyTo || null,
+    attachments: data.attachments ?? [],
+  };
+  if (data.signature !== undefined) {
+    updatePayload.signature = data.signature ? data.signature.trim() : null;
+  }
   const { data: template, error } = await supabase
     .from("Template")
-    .update({
-      name: data.name,
-      subject: data.subject,
-      body: data.body,
-      category: data.category || "Custom",
-      replyTo: data.replyTo || null,
-      attachments: data.attachments ?? [],
-    })
+    .update(updatePayload)
     .eq("id", id)
     .eq("userId", userId)
     .select()
@@ -101,6 +106,7 @@ export async function duplicateTemplate(id: string) {
       name: `Copy of ${original.name}`,
       subject: original.subject,
       body: original.body,
+      signature: original.signature || null,
       category: original.category || "Custom",
       replyTo: original.replyTo || null,
       attachments: original.attachments ?? [],

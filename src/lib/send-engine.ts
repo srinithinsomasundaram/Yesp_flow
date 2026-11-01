@@ -320,7 +320,11 @@ export async function runSendEngine(options: {
     const subject  = applyMergeTags(template.subject || "", contact);
     let   body     = applyMergeTags(template.body    || "", contact);
     const isHtml   = /<[a-z][\s\S]*>/i.test(body);
-    if (template.signature) body += isHtml ? `<br><br>${template.signature}` : `\n\n${template.signature}`;
+    if (template.signature) {
+      const sig = applyMergeTags(template.signature, contact);
+      const formattedSig = isHtml && !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
+      body += isHtml ? `<br><br>${formattedSig}` : `\n\n${formattedSig}`;
+    }
 
     // Unsubscribe footer — legally required for cold outreach
     const appUrl    = process.env.NEXT_PUBLIC_APP_URL || "https://flow.yespstudio.com";

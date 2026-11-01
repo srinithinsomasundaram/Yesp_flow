@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Plus, X, Save, Loader2, Code, Type, Paperclip, ShieldAlert, Image, Eye, Upload } from "lucide-react";
+import { Plus, X, Save, Loader2, Code, Type, Paperclip, ShieldAlert, Image, Eye, Upload, FileSignature } from "lucide-react";
 import { createTemplate } from "@/actions/templates";
 import { getSpamScore } from "@/lib/spam-score";
 import { EmailPreviewModal } from "@/components/EmailPreviewModal";
@@ -209,6 +209,8 @@ export function TemplateForm({ files = [] }: { files?: any[] }) {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [signature, setSignature] = useState("");
+  const [includeSignature, setIncludeSignature] = useState(false);
   const [category, setCategory] = useState("Cold Outreach");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
@@ -220,11 +222,19 @@ export function TemplateForm({ files = [] }: { files?: any[] }) {
     e.preventDefault();
     if (!name || !subject || !body) return;
     setIsSaving(true);
-    const res = await createTemplate({ name, subject, body, category, attachments });
+    const finalSignature = includeSignature && signature.trim() ? signature.trim() : null;
+    const res = await createTemplate({
+      name,
+      subject,
+      body,
+      signature: finalSignature,
+      category,
+      attachments,
+    });
     setIsSaving(false);
     if (!res.success) { alert("Failed to save template."); return; }
     setIsOpen(false);
-    setName(""); setSubject(""); setBody(""); setBodyMode("plain");
+    setName(""); setSubject(""); setBody(""); setSignature(""); setIncludeSignature(false); setBodyMode("plain");
     setCategory("Cold Outreach"); setAttachments([]);
   };
 
@@ -327,7 +337,22 @@ export function TemplateForm({ files = [] }: { files?: any[] }) {
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">Live Preview</label>
                 <div className="w-full h-[248px] border border-slate-200 rounded-xl bg-white p-4 overflow-y-auto text-sm text-slate-800 leading-relaxed">
-                  {body ? <div dangerouslySetInnerHTML={{ __html: body }} /> : <p className="text-slate-300 italic">Preview appears as you type…</p>}
+                  {body || (includeSignature && signature) ? (
+                    <div>
+                      {body && <div dangerouslySetInnerHTML={{ __html: body }} />}
+                      {includeSignature && signature && (
+                        <div className="mt-4 pt-3 border-t border-dashed border-slate-200 text-slate-600">
+                          {/<[a-z][\s\S]*>/i.test(signature) ? (
+                            <div dangerouslySetInnerHTML={{ __html: signature }} />
+                          ) : (
+                            <div className="whitespace-pre-wrap">{signature}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-slate-300 italic">Preview appears as you type…</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -366,6 +391,83 @@ export function TemplateForm({ files = [] }: { files?: any[] }) {
             );
           })()}
 
+          {/* Email Signature Option */}
+          <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200">
+                  <FileSignature className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="form-toggle-signature" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                      Email Signature
+                    </label>
+                    <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                      Optional
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Automatically appended to the end of outgoing emails
+                  </p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  id="form-toggle-signature"
+                  type="checkbox"
+                  checked={includeSignature}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIncludeSignature(checked);
+                    if (checked && !signature) {
+                      setSignature("Best regards,\n{{name}}\nYour Company | example.com");
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+              </label>
+            </div>
+
+            {includeSignature && (
+              <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-600 font-medium">Signature Text or HTML</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSignature("Best regards,\n{{name}}\nYour Company | example.com")}
+                      className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                    >
+                      Reset Example
+                    </button>
+                    {signature && (
+                      <button
+                        type="button"
+                        onClick={() => setSignature("")}
+                        className="text-[11px] text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  rows={3}
+                  placeholder={"Best regards,\n{{name}}\nYour Company | example.com"}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none bg-white font-sans leading-relaxed"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Tip: Merge tags like <span className="font-mono text-blue-600">{"{{name}}"}</span> and <span className="font-mono text-blue-600">{"{{company}}"}</span> are supported.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Attachments */}
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1.5 flex items-center gap-1.5">
@@ -396,7 +498,12 @@ export function TemplateForm({ files = [] }: { files?: any[] }) {
       {/* Email Preview Modal */}
       {showEmailPreview && (
         <EmailPreviewModal
-          template={{ name: name || "New Template", subject, body }}
+          template={{
+            name: name || "New Template",
+            subject,
+            body,
+            signature: includeSignature && signature ? signature : null,
+          }}
           onClose={() => setShowEmailPreview(false)}
         />
       )}

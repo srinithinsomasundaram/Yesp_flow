@@ -6,6 +6,7 @@ interface TemplatePreview {
   name: string;
   subject: string;
   body: string;
+  signature?: string | null;
 }
 
 interface EmailPreviewModalProps {
@@ -59,6 +60,25 @@ export function EmailPreviewModal({ template, onClose }: EmailPreviewModalProps)
             <pre className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
               {template.body}
             </pre>
+          )}
+
+          {template.signature && (
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              {isHtml(template.signature) || hasHtml ? (
+                <div
+                  className="text-sm text-slate-700 leading-relaxed"
+                  dangerouslySetInnerHTML={{
+                    __html: isHtml(template.signature)
+                      ? template.signature
+                      : template.signature.replace(/\n/g, "<br />"),
+                  }}
+                />
+              ) : (
+                <pre className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-sans">
+                  {template.signature}
+                </pre>
+              )}
+            </div>
           )}
         </div>
 

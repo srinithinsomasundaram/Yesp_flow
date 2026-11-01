@@ -16,6 +16,7 @@ ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "customFields" JSONB DEFAULT '{}'
 -- Expand Template
 ALTER TABLE "Template" ADD COLUMN IF NOT EXISTS "category" TEXT DEFAULT 'Custom';
 ALTER TABLE "Template" ADD COLUMN IF NOT EXISTS "replyTo" TEXT;
+ALTER TABLE "Template" ADD COLUMN IF NOT EXISTS "signature" TEXT;
 
 -- Expand Campaign
 ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "timezone" TEXT DEFAULT 'Asia/Kolkata';

@@ -97,6 +97,20 @@ export interface EmailAccount {
   createdAt: string;
 }
 
+export interface TemplateRow {
+  id: string;
+  userId?: string;
+  name: string;
+  subject: string;
+  body: string;
+  signature?: string | null;
+  category?: string;
+  replyTo?: string | null;
+  attachments?: Array<{ id?: string; name: string; url: string }> | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface CampaignStep {
   id: string;
   campaignId: string;
@@ -109,6 +123,7 @@ export interface CampaignStep {
     name: string;
     subject: string | null;
     body: string;
+    signature?: string | null;
     attachments: Array<{ name: string; url: string }> | null;
   } | null;
 }

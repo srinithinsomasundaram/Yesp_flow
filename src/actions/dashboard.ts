@@ -108,6 +108,11 @@ export async function sendTestEmail(
   const subject  = `[TEST] ${applyMergeTags(template.subject || "", dummyContact)}`;
   let   body     = applyMergeTags(template.body || "", dummyContact);
   const isHtml   = /<[a-z][\s\S]*>/i.test(body);
+  if (template.signature) {
+    const sig = applyMergeTags(template.signature, dummyContact);
+    const formattedSig = isHtml && !/<[a-z][\s\S]*>/i.test(sig) ? sig.replace(/\n/g, "<br />") : sig;
+    body += isHtml ? `<br><br>${formattedSig}` : `\n\n${formattedSig}`;
+  }
   const htmlBody  = isHtml ? body : body.replace(/\n/g, "<br />");
   const plainBody = isHtml ? htmlToText(body) : body;
 
