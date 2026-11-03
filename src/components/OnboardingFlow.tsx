@@ -7,7 +7,7 @@ import {
   Upload, Plus, X, Zap, Server,
 } from "lucide-react";
 import { createEmailAccount } from "@/actions/email-accounts";
-import { importContacts } from "@/actions/contacts";
+import { importContactBatches } from "@/lib/import-contacts-client";
 import Papa from "papaparse";
 
 const STEPS = ["Welcome", "Email Setup", "Add Contacts", "All Done"];
@@ -23,7 +23,7 @@ function StepWelcome({ onNext }: { onNext: () => void }) {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Welcome to Flow</h1>
         <p className="text-slate-500 mt-2 text-sm max-w-sm mx-auto">
-          Let's get you set up in 2 minutes. We'll connect your email and load your first contacts.
+          Let&apos;s get you set up in 2 minutes. We&apos;ll connect your email and load your first contacts.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
@@ -165,7 +165,7 @@ function StepEmail({ onNext, onSkip }: { onNext: () => void; onSkip: () => void 
 // ─── Step 3: Add Contacts ───────────────────────────────────────────
 function StepContacts({ onNext }: { onNext: () => void }) {
   const [tab, setTab] = useState<"csv" | "manual">("csv");
-  const [csvRows, setCsvRows] = useState<any[]>([]);
+  const [csvRows, setCsvRows] = useState<{ email: string; name: string }[]>([]);
   const [csvError, setCsvError] = useState("");
   const [manualEmail, setManualEmail] = useState("");
   const [manualName, setManualName] = useState("");
@@ -179,10 +179,10 @@ function StepContacts({ onNext }: { onNext: () => void }) {
       header: true,
       skipEmptyLines: true,
       complete: (result) => {
-        const rows = result.data as any[];
+        const rows = result.data as { email?: string; Email?: string; name?: string; Name?: string }[];
         if (!rows.length) { setCsvError("No rows found in CSV."); return; }
         if (!rows[0].email && !rows[0].Email) { setCsvError("CSV must have an 'email' column."); return; }
-        setCsvRows(rows.map((r) => ({ email: r.email || r.Email, name: r.name || r.Name || "" })));
+        setCsvRows(rows.map((r) => ({ email: r.email || r.Email || "", name: r.name || r.Name || "" })).filter((r) => r.email));
       },
     });
   };
@@ -198,7 +198,18 @@ function StepContacts({ onNext }: { onNext: () => void }) {
     const rows = tab === "csv" ? csvRows : manualList;
     if (!rows.length) { onNext(); return; }
     setSaving(true);
-    await importContacts(rows);
+    try {
+      const result = await importContactBatches(rows);
+      if (!result.success) {
+        setCsvError(`Imported ${result.count} contacts. ${result.error || "Import failed."}`);
+        setSaving(false);
+        return;
+      }
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : "Import failed.");
+      setSaving(false);
+      return;
+    }
     setSaved(true);
     setSaving(false);
     setTimeout(onNext, 800);
@@ -320,7 +331,7 @@ function StepDone() {
         <CheckCircle2 className="w-8 h-8 text-emerald-600" />
       </div>
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">You're all set!</h2>
+        <h2 className="text-2xl font-bold text-slate-900">You&apos;re all set!</h2>
         <p className="text-slate-500 mt-2 text-sm">Flow is ready to send your outreach campaigns.</p>
       </div>
       <button

@@ -11,16 +11,23 @@ export async function getCampaigns() {
     .from("Campaign")
     .select(`
       *,
-      steps:CampaignStep (*, template:Template (*)),
-      states:ContactCampaignState (*, contact:Contact (*))
+      steps:CampaignStep (*, template:Template (*))
     `)
     .eq("userId", userId)
     .order("createdAt", { ascending: false });
 
   if (error) dbLog("getCampaigns", error);
-  return (data || []).map((c) => ({
-    ...c,
-    steps: (c.steps || []).sort((a: any, b: any) => a.stepNumber - b.stepNumber),
+  return Promise.all((data || []).map(async (c) => {
+    const { count, error: countError } = await supabase
+      .from("ContactCampaignState")
+      .select("contactId", { count: "exact", head: true })
+      .eq("campaignId", c.id);
+    if (countError) dbLog("getCampaigns-contactCount", countError);
+    return {
+      ...c,
+      contactCount: count ?? 0,
+      steps: (c.steps || []).sort((a: { stepNumber: number }, b: { stepNumber: number }) => a.stepNumber - b.stepNumber),
+    };
   }));
 }
 
@@ -30,14 +37,26 @@ export async function getCampaign(id: string) {
     .from("Campaign")
     .select(`
       *,
-      steps:CampaignStep (*, template:Template (*)),
-      states:ContactCampaignState (*, contact:Contact (*))
+      steps:CampaignStep (*, template:Template (*))
     `)
     .eq("id", id)
     .eq("userId", userId)
     .single();
 
   if (error || !data) { dbLog("getCampaign", error); return null; }
+
+  const states: Array<Record<string, unknown>> = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data: page, error: statesError } = await supabase
+      .from("ContactCampaignState")
+      .select("*, contact:Contact (*)")
+      .eq("campaignId", id)
+      .order("contactId")
+      .range(offset, offset + 499);
+    if (statesError) { dbLog("getCampaign-states", statesError); break; }
+    states.push(...(page || []));
+    if (!page || page.length < 500) break;
+  }
 
   let emailAccount = null;
   if (data.emailAccountId) {
@@ -52,15 +71,16 @@ export async function getCampaign(id: string) {
 
   return {
     ...data,
+    states,
     emailAccount,
-    steps: (data.steps || []).sort((a: any, b: any) => a.stepNumber - b.stepNumber),
+    steps: (data.steps || []).sort((a: { stepNumber: number }, b: { stepNumber: number }) => a.stepNumber - b.stepNumber),
   };
 }
 
 export async function createCampaign(data: {
   name: string;
   dailyLimit: number;
-  steps: any[];
+  steps: { stepNumber?: number; templateId: string; delayDays: number; delayUnit?: string }[];
   timezone?: string;
   sendingDays?: string;
   startTime?: string;
@@ -143,7 +163,7 @@ export async function addCampaignStep(campaignId: string, templateId: string, de
     .from("CampaignStep")
     .select("stepNumber")
     .eq("campaignId", campaignId);
-  const maxStep = existing?.length ? Math.max(...existing.map((s: any) => s.stepNumber)) : -1;
+  const maxStep = existing?.length ? Math.max(...existing.map((s) => s.stepNumber)) : -1;
   const stepNumber = maxStep + 1;
 
   const { error } = await supabase.from("CampaignStep").insert([

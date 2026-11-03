@@ -54,8 +54,8 @@ export default async function CampaignsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {campaigns.map((campaign: any) => {
-                const contactCount = campaign.states?.length ?? 0;
+              {campaigns.map((campaign) => {
+                const contactCount = campaign.contactCount;
                 const createdAt = campaign.createdAt
                   ? new Date(campaign.createdAt).toLocaleDateString("en-US", {
                       month: "short",

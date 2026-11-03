@@ -5,19 +5,25 @@ import { revalidatePath } from "next/cache";
 import { dbLog } from "@/lib/db-error";
 import { getCurrentUserId, hasPermission } from "@/lib/auth-helper";
 import type { ContactRow, ContactTabCounts } from "@/types/db";
-import { CONTACTS_PAGE_SIZE } from "@/lib/pagination";
+import { CONTACTS_PAGE_SIZE, CONTACT_IMPORT_BATCH_SIZE, MAX_CONTACTS } from "@/lib/pagination";
 
 // Lightweight count-only query — no full field fetch, just IDs + CCS status fields.
 // Used by the contacts page tab bar so counts stay accurate across all pages.
 export async function getContactTabCounts(): Promise<ContactTabCounts> {
   const userId = await getCurrentUserId();
-  const { data, error } = await supabase
-    .from("Contact")
-    .select("id, states:ContactCampaignState(status, nextActionDate)")
-    .eq("userId", userId);
-
-  if (error) dbLog("getContactTabCounts", error);
-  const rows = data || [];
+  const rows: Array<{ id: string; states: Array<{ status: string; nextActionDate: string | null }> }> = [];
+  // PostgREST caps a single response at 1,000 rows by default.
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase
+      .from("Contact")
+      .select("id, states:ContactCampaignState(status, nextActionDate)")
+      .eq("userId", userId)
+      .order("id")
+      .range(offset, offset + 499);
+    if (error) { dbLog("getContactTabCounts", error); break; }
+    rows.push(...(data || []));
+    if (!data || data.length < 500) break;
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -121,38 +127,61 @@ export type ContactImportRow = {
 
 export async function getContacts(): Promise<ContactRow[]> {
   const userId = await getCurrentUserId();
-  const { data, error } = await supabase
-    .from("Contact")
-    .select(`*, states:ContactCampaignState(*, campaign:Campaign(*))`)
-    .eq("userId", userId)
-    .order("createdAt", { ascending: false });
-
-  if (error) dbLog("getContacts", error);
-  return (data || []) as ContactRow[];
+  const contacts: ContactRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase
+      .from("Contact")
+      .select(`*, states:ContactCampaignState(*, campaign:Campaign(*))`)
+      .eq("userId", userId)
+      .order("createdAt", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + 499);
+    if (error) { dbLog("getContacts", error); break; }
+    contacts.push(...((data || []) as ContactRow[]));
+    if (!data || data.length < 500) break;
+  }
+  return contacts;
 }
 
 export async function importContacts(
   contactsData: ContactImportRow[],
-  campaignId?: string
+  campaignId?: string,
+  revalidateAfterImport = true
 ): Promise<{ success: boolean; count: number; error?: string }> {
   try {
   if (!await hasPermission("member")) return { success: false, count: 0, error: "Member access required to import contacts." };
+  if (contactsData.length > CONTACT_IMPORT_BATCH_SIZE) return { success: false, count: 0, error: `Import up to ${CONTACT_IMPORT_BATCH_SIZE} contacts per batch.` };
   const userId = await getCurrentUserId();
+  const { count: currentCount, error: countError } = await supabase
+    .from("Contact").select("id", { count: "exact", head: true }).eq("userId", userId);
+  if (countError || currentCount === null) return { success: false, count: 0, error: "Could not check contact limit." };
+  let availableSlots = Math.max(0, MAX_CONTACTS - currentCount);
   let importedCount = 0;
+  let limitReached = false;
+  let failedCount = 0;
+  let firstError: string | undefined;
   const insertedContactIds: string[] = [];
 
-  for (const row of contactsData) {
-    if (!row.email) continue;
+  // A batch can contain the same email more than once; keep the latest row.
+  const uniqueRows = Array.from(new Map(contactsData.filter((row) => row.email).map((row) => [row.email.trim().toLowerCase(), row])).values());
+  const processRow = async (row: ContactImportRow) => {
+    if (!row.email) return;
 
     // maybeSingle() returns null (no error) when no row found — avoids PGRST116
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupError } = await supabase
       .from("Contact")
       .select("id, isDNC, isUnsubscribed")
       .eq("email", row.email)
       .eq("userId", userId)
       .maybeSingle();
+    if (lookupError) {
+      dbLog(`importContacts-lookup(${row.email})`, lookupError);
+      failedCount++;
+      firstError ??= lookupError.message;
+      return;
+    }
 
-    if (existing && (existing.isDNC || existing.isUnsubscribed)) continue;
+    if (existing && (existing.isDNC || existing.isUnsubscribed)) return;
 
     const derivedName =
       row.name ||
@@ -179,10 +208,17 @@ export async function importContacts(
       if (Object.keys(patch).length) {
         const { error: upErr } = await supabase
           .from("Contact").update(patch).eq("id", existing.id).eq("userId", userId);
-        if (upErr) { dbLog(`importContacts-update(${row.email})`, upErr); continue; }
+        if (upErr) {
+          dbLog(`importContacts-update(${row.email})`, upErr);
+          failedCount++;
+          firstError ??= upErr.message;
+          return;
+        }
       }
       contactId = existing.id;
     } else {
+      if (availableSlots === 0) { limitReached = true; return; }
+      availableSlots--;
       // Insert new contact
       const { data, error: insErr } = await supabase
         .from("Contact")
@@ -203,7 +239,13 @@ export async function importContacts(
         })
         .select("id")
         .single();
-      if (insErr || !data) { dbLog(`importContacts-insert(${row.email})`, insErr); continue; }
+      if (insErr || !data) {
+        availableSlots++;
+        dbLog(`importContacts-insert(${row.email})`, insErr);
+        failedCount++;
+        firstError ??= insErr?.message || "Contact insert returned no data.";
+        return;
+      }
       contactId = data.id;
     }
 
@@ -220,6 +262,10 @@ export async function importContacts(
         await supabase.from("Contact").update(extras).eq("id", contactId);
       }
     }
+  };
+
+  for (let offset = 0; offset < uniqueRows.length; offset += 10) {
+    await Promise.all(uniqueRows.slice(offset, offset + 10).map(processRow));
   }
 
   if (campaignId && insertedContactIds.length > 0) {
@@ -229,16 +275,23 @@ export async function importContacts(
       currentStep: 0,
       status: "New",
     }));
-    await supabase
+    const { error: campaignError } = await supabase
       .from("ContactCampaignState")
       .upsert(statesToInsert, { onConflict: "contactId,campaignId" });
+    if (campaignError) {
+      dbLog("importContacts-campaign", campaignError);
+      if (revalidateAfterImport) revalidatePath("/contacts");
+      return { success: false, count: importedCount, error: "Contacts were saved, but campaign enrollment failed." };
+    }
   }
 
-  revalidatePath("/contacts");
+  if (revalidateAfterImport) revalidatePath("/contacts");
+  if (limitReached) return { success: false, count: importedCount, error: `Contact limit of ${MAX_CONTACTS.toLocaleString()} reached.` };
+  if (failedCount) return { success: false, count: importedCount, error: `${failedCount} contacts could not be saved: ${firstError}` };
   return { success: true, count: importedCount };
-  } catch (err: any) {
-    console.error("[importContacts] unexpected error:", err?.message ?? err);
-    return { success: false, count: 0, error: err?.message ?? "Unexpected server error" };
+  } catch (err: unknown) {
+    console.error("[importContacts] unexpected error:", err);
+    return { success: false, count: 0, error: err instanceof Error ? err.message : "Unexpected server error" };
   }
 }
 

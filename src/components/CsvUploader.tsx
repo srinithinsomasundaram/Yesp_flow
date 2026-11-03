@@ -3,16 +3,19 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import { Upload, Loader2, X, FileSpreadsheet, Sparkles, CheckCircle2 } from "lucide-react";
-import { importContacts } from "@/actions/contacts";
+import { Upload, Loader2, X, FileSpreadsheet, Sparkles } from "lucide-react";
+import { importContactBatches } from "@/lib/import-contacts-client";
+import { MAX_CONTACTS } from "@/lib/pagination";
+import type { ContactImportRow } from "@/actions/contacts";
 
-export function CsvUploader({ campaigns }: { campaigns: any[] }) {
+export function CsvUploader({ campaigns }: { campaigns: { id: string; name: string }[] }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processed, setProcessed] = useState(0);
   const [step, setStep] = useState<1 | 2>(1);
   
-  const [parsedContacts, setParsedContacts] = useState<any[]>([]);
+  const [parsedContacts, setParsedContacts] = useState<ContactImportRow[]>([]);
   const [selectedAction, setSelectedAction] = useState<"new_campaign" | "existing_campaign" | "contacts_only">("contacts_only");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
 
@@ -42,6 +45,11 @@ export function CsvUploader({ campaigns }: { campaigns: any[] }) {
           };
         }).filter(c => c.email);
 
+        if (contactsData.length > MAX_CONTACTS) {
+          alert(`A CSV can contain at most ${MAX_CONTACTS.toLocaleString()} contacts.`);
+          setIsProcessing(false);
+          return;
+        }
         setParsedContacts(contactsData);
         setStep(2);
         setIsProcessing(false);
@@ -55,24 +63,28 @@ export function CsvUploader({ campaigns }: { campaigns: any[] }) {
 
   const handleImport = async () => {
     setIsProcessing(true);
+    setProcessed(0);
     const campId = selectedAction === "existing_campaign" && selectedCampaignId
       ? selectedCampaignId
       : undefined;
 
+    let completed = false;
     try {
-      const res = await importContacts(parsedContacts, campId);
+      const res = await importContactBatches(parsedContacts, campId, setProcessed);
       if (res.success) {
         alert(`Successfully imported ${res.count} of ${parsedContacts.length} contacts!`);
         router.refresh();
+        completed = true;
       } else {
-        alert(`Import failed: ${(res as any).error || "Unknown error"}`);
+        alert(`Imported ${res.count} contacts. Import stopped: ${res.error || "Unknown error"}`);
+        if (res.count > 0) router.refresh();
       }
-    } catch (err: any) {
-      alert(`Import error: ${err?.message || "Unknown error"}`);
+    } catch (err: unknown) {
+      alert(`Import error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
 
     setIsProcessing(false);
-    reset();
+    if (completed) reset();
   };
 
   const reset = () => {
@@ -111,7 +123,7 @@ export function CsvUploader({ campaigns }: { campaigns: any[] }) {
                     <FileSpreadsheet className="w-8 h-8" />
                   </div>
                   <p className="text-slate-900 font-extrabold mb-1">Upload a CSV file</p>
-                  <p className="text-sm text-slate-600 mb-6 font-medium">We'll automatically detect Email, Name, and Company columns.</p>
+                  <p className="text-sm text-slate-600 mb-6 font-medium">We&apos;ll automatically detect Email, Name, and Company columns.</p>
                   
                   <input 
                     type="file" 
@@ -133,6 +145,7 @@ export function CsvUploader({ campaigns }: { campaigns: any[] }) {
                   <div className="bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-200 text-center">
                     <span className="text-2xl font-black">{parsedContacts.length}</span>
                     <p className="text-sm font-bold mt-1">contacts detected in CSV</p>
+                    {isProcessing && <p className="text-xs mt-1">Processed {processed} of {parsedContacts.length}</p>}
                   </div>
 
                   <div className="space-y-3">
